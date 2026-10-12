@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PPA Jumper Audit Automation</title>
+  <link rel="stylesheet" href="src/ui/styles.css" />
+  <!--
+    Buka via server lokal: npx serve . atau python -m http.server 8080
+    Jangan buka sebagai file:// — ES module import diblokir browser.
+    Tidak ada database, backend, API, atau import Excel.
+  -->
+
+  <!-- Chart.js via CDN — diperlukan untuk render 12 grafik dan PLC chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header id="app-header">
+    <h1>PPA Jumper Audit Automation</h1>
+    <span class="app-version">v1.0 · MVP · Client-side only</span>
+  </header>
+
+  <main id="app-main">
+
+    <!-- ── Global Status Panel ── -->
+    <div class="status-panel-wrapper">
+      <div id="app-status-panel"></div>
+      <div class="export-actions">
+        <button class="btn btn--secondary" disabled title="Tersedia di Phase 6">Download PPTX</button>
+        <button class="btn btn--secondary" disabled title="Tersedia di Phase 7">Download PDF</button>
+      </div>
+    </div>
+
+    <!-- ── STEP 1: Report Setup ── -->
+    <div class="section-card">
+      <div class="section-card__header">
+        <h2>1. Report Setup</h2>
+      </div>
+      <div class="section-card__body">
+        <div id="section-report-info">
+          <!-- Diisi oleh formReportInfo.js (hanya config form) -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 2: Area Summary & Weekly Chart Data ── -->
+    <div class="section-card">
+      <div class="section-card__header">
+        <h2>2. Area Summary &amp; Weekly Chart Data</h2>
+      </div>
+      <div class="section-card__body">
+        <div class="oq-banner">
+          Angka Area Summary adalah input manual (tidak ditimpa Register). Weekly Chart Data mengatur Plan dan Actual.
+        </div>
+        <div id="section-area-summary">
+          <!-- Diisi oleh formReportInfo.js (hanya area cards) -->
+        </div>
+        <hr class="divider" />
+        <div id="section-weekly-chart">
+          <!-- Diisi oleh formWeeklyChart.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 3: Jumper Register ── -->
+    <div class="section-card">
+      <div class="section-card__header">
+        <h2>3. Jumper Register</h2>
+      </div>
+      <div class="section-card__body">
+        <div id="section-register">
+          <!-- Diisi oleh formRegister.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 4: Single-Slide Report Preview ── -->
+    <div class="section-card">
+      <div class="section-card__header">
+        <h2>4. Single-Slide Report Preview</h2>
+      </div>
+      <div class="section-card__body" style="padding: 0;">
+        <div class="slide-preview-outer" id="section-preview">
+          <!-- Diisi oleh slidePreview.js -->
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── App Entry Point ── -->
+  <script type="module">
+    import { initApp } from "./src/ui/app.js";
+    document.addEventListener("DOMContentLoaded", initApp);
+  </script>
+
+</body>
+</html>
