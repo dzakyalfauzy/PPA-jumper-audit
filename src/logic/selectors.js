@@ -68,10 +68,20 @@ function isActiveJumper(record) {
  */
 function isRemovedInPeriod(record, reportingYear, reportingWeekLabel) {
   if (record.removalStatus !== REMOVAL_STATUS.YES) return false;
-  if (record.removalYear !== reportingYear) return false;
-  // Pencocokan label-ke-label: keduanya string eksplisit tanpa asumsi format.
-  // [OQ-07] Jika konvensi minggu berubah, hanya pemanggil yang perlu menyesuaikan label.
-  return record.removalWeek === reportingWeekLabel;
+  if (Number(record.removalYear) !== Number(reportingYear)) return false;
+
+  // Pencocokan fleksibel jika removalWeek dan reportingWeekLabel sama-sama ada
+  if (!record.removalWeek || !reportingWeekLabel) return false;
+  const rwStr = String(record.removalWeek).trim().toUpperCase();
+  const targetStr = String(reportingWeekLabel).trim().toUpperCase();
+  if (rwStr === targetStr) return true;
+
+  // Pencocokan nomor minggu jika keduanya berupa W<number> atau angka
+  const rwNum = parseInt(rwStr.replace(/\D/g, ""), 10);
+  const targetNum = parseInt(targetStr.replace(/\D/g, ""), 10);
+  if (!isNaN(rwNum) && !isNaN(targetNum) && rwNum === targetNum) return true;
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------

@@ -19,16 +19,43 @@ import { getAllChartSeries, getChartKey } from "../logic/chartData.js";
 import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST } from "../model/constants.js";
 
 // ---------------------------------------------------------------------------
-// KONSTANTA VISUAL
+// KONSTANTA VISUAL — WARNA PER KATEGORI (Excel Reference)
+// Plan (Bar):
+//   - Shortbranches: #BFBFBF (abu-abu)
+//   - Forces: #008577 (teal/hijau)
+//   - AFI: #00B0F0 (cyan/biru)
+// Actual (Line):
+//   - Semua kategori: #A52A98 (ungu/magenta) dengan marker kotak (rect)
 // ---------------------------------------------------------------------------
 
+export const ACTUAL_COLOR = "#A52A98";
+
+export const CATEGORY_COLORS = Object.freeze({
+  Shortbranches: {
+    base:       "#BFBFBF",                   // abu-abu Plan
+    planBg:     "rgba(191, 191, 191, 0.75)", // Bar Plan
+    planBorder: "#8C8C8C",
+    actual:     ACTUAL_COLOR,                // Line solid ungu
+    actualPoint:ACTUAL_COLOR,                // Marker kotak ungu
+  },
+  Forces: {
+    base:       "#008577",                   // teal/hijau Plan
+    planBg:     "rgba(0, 133, 119, 0.75)",   // Bar Plan
+    planBorder: "#005a50",
+    actual:     ACTUAL_COLOR,                // Line solid ungu
+    actualPoint:ACTUAL_COLOR,                // Marker kotak ungu
+  },
+  AFI: {
+    base:       "#00B0F0",                   // cyan/biru Plan
+    planBg:     "rgba(0, 176, 240, 0.75)",   // Bar Plan
+    planBorder: "#008dbf",
+    actual:     ACTUAL_COLOR,                // Line solid ungu
+    actualPoint:ACTUAL_COLOR,                // Marker kotak ungu
+  },
+});
+
 export const CHART_COLORS = Object.freeze({
-  plan:         "#1f4e78",                   // dark blue navy — Plan bar
-  planBorder:   "#123250",
-  planBg:       "rgba(31, 78, 120, 0.75)",
-  actual:       "#c000c0",                   // magenta/purple — Actual line
-  actualBorder: "#c000c0",
-  actualBg:     "rgba(192, 0, 192, 0.15)",
+  default: CATEGORY_COLORS.Shortbranches,
 });
 
 // Registry chart instances agar dapat di-destroy saat re-render
@@ -107,8 +134,86 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
   const planData   = series.planSeries.map((v) => (v === null || v === undefined ? null : v));
   const actualData = series.actualSeries.map((v) => (v === null || v === undefined ? null : v));
 
-  // Konfigurasi mixed chart: Plan sebagai bar chart, Actual sebagai line chart (magenta/purple dengan visible markers)
+  // Ambil palet warna spesifik berdasarkan kategori
+  const catTheme = CATEGORY_COLORS[series.category] || CATEGORY_COLORS.Shortbranches;
+
+  // Plugin kustom data label untuk Plan (di dalam/atas bar) dan Actual (di dalam/dekat marker kotak ungu)
+  // Menghindari tabrakan teks saat Plan dan Actual bernilai sama atau berdekatan
+  const dataLabelsPlugin = {
+    id: `customDataLabels_${canvasId}`,
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      ctx.save();
+      ctx.font = "bold 8.5px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      const barMeta = chart.getDatasetMeta(0);
+      const lineMeta = chart.getDatasetMeta(1);
+
+      const count = series.labels.length;
+      for (let i = 0; i < count; i++) {
+        const pVal = planData[i];
+        const aVal = actualData[i];
+        const barElem = barMeta && barMeta.data ? barMeta.data[i] : null;
+        const lineElem = lineMeta && lineMeta.data ? lineMeta.data[i] : null;
+
+        // 1. Gambar batang Plan label
+        if (pVal !== null && barElem) {
+          const barHeight = Math.abs(barElem.base - barElem.y);
+          let labelY;
+          let labelColor;
+
+          // Cek apakah Actual dan Plan berdekatan secara vertikal
+          const isOverlapRisk = aVal !== null && lineElem && Math.abs(barElem.y - lineElem.y) < 18;
+
+          if (barHeight >= 14 && pVal > 0 && !isOverlapRisk) {
+            // Cukup ruang di dalam batang
+            labelY = barElem.y + 8;
+            labelColor = "#ffffff";
+          } else {
+            // Letakkan di atas atau di dasar batang dengan penyesuaian offset jika risiko overlap
+            if (isOverlapRisk && aVal >= pVal) {
+              // Jika Actual di atas atau sama dengan Plan, geser label Plan ke bawah/ke dalam
+              labelY = barHeight >= 8 ? barElem.y + 7 : barElem.base - 6;
+              labelColor = barHeight >= 8 ? "#ffffff" : "#333333";
+            } else {
+              labelY = barElem.y - 7;
+              labelColor = "#1e293b";
+            }
+          }
+
+          ctx.fillStyle = labelColor;
+          ctx.fillText(String(pVal), barElem.x, labelY);
+        }
+
+        // 2. Gambar Actual label (kotak ungu dengan teks putih)
+        if (aVal !== null && lineElem) {
+          const x = lineElem.x;
+          let y = lineElem.y;
+
+          // Jika nilai Actual sama dengan Plan, letakkan kotak Actual sedikit di atas atau di posisi target
+          const boxW = 13;
+          const boxH = 11;
+
+          ctx.fillStyle = ACTUAL_COLOR;
+          ctx.fillRect(x - boxW / 2, y - boxH / 2, boxW, boxH);
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x - boxW / 2, y - boxH / 2, boxW, boxH);
+
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(String(aVal), x, y);
+        }
+      }
+
+      ctx.restore();
+    },
+  };
+
+  // Konfigurasi mixed chart: Plan sebagai bar chart, Actual sebagai line chart dengan marker kotak
   const chart = new ChartJS(canvas, {
+    plugins: [dataLabelsPlugin],
     data: {
       labels: series.labels, // urutan kronologis weekLabels
       datasets: [
@@ -116,8 +221,8 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
           type:            "bar",
           label:           "Plan",
           data:            planData,
-          backgroundColor: CHART_COLORS.planBg,
-          borderColor:     CHART_COLORS.planBorder,
+          backgroundColor: catTheme.planBg,
+          borderColor:     catTheme.planBorder,
           borderWidth:     1,
           barPercentage:   0.6,
           categoryPercentage: 0.8,
@@ -127,14 +232,15 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
           type:            "line",
           label:           "Actual",
           data:            actualData,
-          borderColor:     CHART_COLORS.actualBorder,
-          backgroundColor: CHART_COLORS.actual,
-          pointBackgroundColor: CHART_COLORS.actual,
+          borderColor:     ACTUAL_COLOR,
+          backgroundColor: ACTUAL_COLOR,
+          pointBackgroundColor: ACTUAL_COLOR,
           pointBorderColor:     "#ffffff",
           pointBorderWidth:     1,
-          borderWidth:     2.5,
-          pointRadius:     4,
-          pointHoverRadius:6,
+          pointStyle:      "rect",
+          borderWidth:     2,
+          pointRadius:     6,
+          pointHoverRadius:7,
           spanGaps:        false, // data null tidak disambung
           tension:         0.1,
           fill:            false,
@@ -146,11 +252,41 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
       responsive:          true,
       maintainAspectRatio: false,
       animation:           { duration: 200 },
+      layout: {
+        padding: { top: 12, bottom: 4, left: 4, right: 4 },
+      },
       plugins: {
         legend: {
           display:  true,
           position: "top",
-          labels:   { boxWidth: 10, font: { size: 9 }, padding: 4 },
+          labels:   {
+            boxWidth: 12,
+            boxHeight: 8,
+            font: { size: 9 },
+            padding: 5,
+            generateLabels: (chart) => {
+              return [
+                {
+                  text: "Plan",
+                  fillStyle: catTheme.planBg,
+                  strokeStyle: catTheme.planBorder,
+                  lineWidth: 1,
+                  hidden: false,
+                  pointStyle: "rect",
+                  datasetIndex: 0,
+                },
+                {
+                  text: "Actual",
+                  fillStyle: ACTUAL_COLOR,
+                  strokeStyle: ACTUAL_COLOR,
+                  lineWidth: 2,
+                  hidden: false,
+                  pointStyle: "rect",
+                  datasetIndex: 1,
+                },
+              ];
+            },
+          },
         },
         tooltip: {
           callbacks: {
@@ -168,6 +304,7 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
         },
         y: {
           beginAtZero: true,
+          grace:       "15%", // beri ruang vertikal agar label tidak terpotong
           ticks:       { font: { size: 8 }, precision: 0 },
           grid:        { color: "rgba(0,0,0,0.08)" },
         },

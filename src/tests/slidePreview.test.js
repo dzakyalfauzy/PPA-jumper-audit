@@ -16,7 +16,8 @@
 
 "use strict";
 
-import { canvasId } from "../preview/chartRenderer.js";
+import { canvasId, CATEGORY_COLORS, ACTUAL_COLOR } from "../preview/chartRenderer.js";
+import { renderSlidePreview } from "../preview/slidePreview.js";
 import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, CHART_MATRIX } from "../model/constants.js";
 import {
   remainingJumperList,
@@ -97,6 +98,50 @@ describe("canvasId — ID canvas konsisten untuk 12 sel grafik", () => {
     const id1 = canvasId(AREA_IDS.FURNACE, CATEGORIES.FORCES);
     const id2 = canvasId(AREA_IDS.FURNACE, CATEGORIES.FORCES);
     expect(id1).toBe(id2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TEST: CATEGORY_COLORS — Revisi Palet Warna Kategori
+// ---------------------------------------------------------------------------
+
+describe("CATEGORY_COLORS — Palet warna kategori konsisten pada seluruh 4 area (Excel Reference)", () => {
+  test("memiliki tema untuk Shortbranches, Forces, dan AFI", () => {
+    expect(CATEGORY_COLORS).toHaveProperty(CATEGORIES.SHORTBRANCHES);
+    expect(CATEGORY_COLORS).toHaveProperty(CATEGORIES.FORCES);
+    expect(CATEGORY_COLORS).toHaveProperty(CATEGORIES.AFI);
+  });
+
+  test("AFI menggunakan warna dasar #00B0F0 (cyan/biru) untuk Plan", () => {
+    expect(CATEGORY_COLORS[CATEGORIES.AFI].base).toBe("#00B0F0");
+    expect(CATEGORY_COLORS[CATEGORIES.AFI].actual).toBe(ACTUAL_COLOR);
+  });
+
+  test("Shortbranches menggunakan warna dasar #BFBFBF (abu-abu) untuk Plan", () => {
+    expect(CATEGORY_COLORS[CATEGORIES.SHORTBRANCHES].base).toBe("#BFBFBF");
+    expect(CATEGORY_COLORS[CATEGORIES.SHORTBRANCHES].actual).toBe(ACTUAL_COLOR);
+  });
+
+  test("Forces menggunakan warna dasar #008577 (teal/hijau) untuk Plan", () => {
+    expect(CATEGORY_COLORS[CATEGORIES.FORCES].base).toBe("#008577");
+    expect(CATEGORY_COLORS[CATEGORIES.FORCES].actual).toBe(ACTUAL_COLOR);
+  });
+
+  test("Actual konsisten menggunakan warna ungu #A52A98 untuk semua kategori", () => {
+    expect(ACTUAL_COLOR).toBe("#A52A98");
+    expect(CATEGORY_COLORS[CATEGORIES.AFI].actual).toBe("#A52A98");
+    expect(CATEGORY_COLORS[CATEGORIES.SHORTBRANCHES].actual).toBe("#A52A98");
+    expect(CATEGORY_COLORS[CATEGORIES.FORCES].actual).toBe("#A52A98");
+  });
+
+  test("setiap kategori Plan memiliki warna berbeda sehingga mudah dibedakan secara visual", () => {
+    const colors = [
+      CATEGORY_COLORS[CATEGORIES.AFI].base,
+      CATEGORY_COLORS[CATEGORIES.SHORTBRANCHES].base,
+      CATEGORY_COLORS[CATEGORIES.FORCES].base,
+    ];
+    const uniqueColors = new Set(colors);
+    expect(uniqueColors.size).toBe(3);
   });
 });
 
@@ -200,6 +245,55 @@ describe("Integrasi kalkulasi preview (tanpa DOM)", () => {
     const record = makeRecord({ removalStatus: REMOVAL_STATUS.YES, removalWeek: "W40", removalYear: 2026, quantity: 3 });
     const { count } = removedJumperCount([record], 2026, "W40");
     expect(count).toBe(3);
+  });
+
+  // ── Regression Tests: Konsistensi Periode Laporan ──
+  test("removedJumperCount mencocokkan removalWeek baik W40, '40', maupun wk40 secara konsisten", () => {
+    const records = [
+      makeRecord({ jumperId: "J-R1", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W40", removalYear: 2026, quantity: 1 }),
+      makeRecord({ jumperId: "J-R2", removalStatus: REMOVAL_STATUS.YES, removalWeek: "40", removalYear: 2026, quantity: 2 }),
+      makeRecord({ jumperId: "J-R3", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W52", removalYear: 2026, quantity: 5 }), // beda minggu
+    ];
+    // Periode eksplisit W40
+    const resW40 = removedJumperCount(records, 2026, "W40");
+    expect(resW40.count).toBe(3); // J-R1 (1) + J-R2 (2)
+
+    // Periode eksplisit W52
+    const resW52 = removedJumperCount(records, 2026, "W52");
+    expect(resW52.count).toBe(5);
+  });
+
+  test("Slide preview mengikat period label dan removed count ke Reporting Week terpilih (W40), bukan label terakhir weekLabels", () => {
+    // Simulasi state dengan reportingWeek = 40, tetapi weekLabels berisi sampai W52
+    const state = {
+      config: {
+        title: "PPA Jumper Audit",
+        plantArea: "Process Plant Area",
+        reportingYear: 2026,
+        reportingWeek: 40,
+        weekLabels: ["W38", "W39", "W40", "W52"], // label terakhir W52
+        totalPlcInScope: 69,
+        identificationYearFilter: 2026,
+      },
+      areaSummary: [],
+      weeklyChartData: [],
+      jumperRegister: [
+        makeRecord({ jumperId: "J-R40", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W40", removalYear: 2026, quantity: 2 }),
+        makeRecord({ jumperId: "J-R52", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W52", removalYear: 2026, quantity: 7 }),
+      ],
+    };
+
+    // Panggil renderSlidePreview ke elemen DOM virtual
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+
+    // Header harus menampilkan Period: W40, BUKAN W52
+    expect(container.innerHTML).toContain("Period: W40");
+    expect(container.innerHTML).not.toContain("Period: W52");
+
+    // Total Removed pada KPI harus mencerminkan W40 (yaitu 2), BUKAN W52 (yaitu 7)
+    expect(container.innerHTML).toContain("Total Removed (W40, 2026)");
+    expect(container.innerHTML).toContain('<div class="slide-kpi-box__value">\n                  2\n                </div>');
   });
 
   // ── PLC Ratio ──

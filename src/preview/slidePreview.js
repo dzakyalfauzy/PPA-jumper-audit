@@ -41,7 +41,7 @@ import {
   calculateAreaSummariesFromWeeklyChart,
 } from "../logic/selectors.js";
 import { getAllChartSeries, checkChartDataCompleteness } from "../logic/chartData.js";
-import { renderAllCharts, destroyAllCharts, canvasId } from "./chartRenderer.js";
+import { renderAllCharts, destroyAllCharts, canvasId, CATEGORY_COLORS } from "./chartRenderer.js";
 import { APP_CONFIG } from "../model/config.js";
 
 // ---------------------------------------------------------------------------
@@ -107,11 +107,11 @@ function _computeAll(state) {
     discrepancyWarning: APP_CONFIG.discrepancyWarning,
   };
 
-  // Tentukan label minggu laporan (label eksplisit terakhir dalam weekLabels, OQ-07)
-  // Penjelasan: reportingWeek (integer) tidak bisa langsung dipakai; gunakan label
-  // terakhir sebagai proxy "minggu laporan saat ini" sampai OQ-07 dikonfirmasi.
+  // Tentukan label minggu laporan secara EKSPLISIT dari config.reportingWeek
+  // Jangan gunakan label terakhir dalam weekLabels sebagai pengganti reporting period
+  const reportingWeekNum = config.reportingWeek ?? null;
+  const reportingWeekLabel = reportingWeekNum != null ? `W${reportingWeekNum}` : null;
   const weekLabels = config.weekLabels || [];
-  const reportingWeekLabel = weekLabels.length > 0 ? weekLabels[weekLabels.length - 1] : null;
 
   const remainingResult  = remainingJumperList(jumperRegister, appConfig);
   const authorizedResult = authorizedMocCount(jumperRegister);
@@ -177,7 +177,7 @@ function _buildSlideHTML(state, computed) {
         <div class="slide-header__title">${_esc(title)}</div>
         <div class="slide-header__meta">
           ${_esc(area)} &nbsp;|&nbsp; Week ${_esc(String(week))} · ${_esc(String(year))}
-          ${reportingWeekLabel ? `&nbsp;|&nbsp; Period: ${_esc(reportingWeekLabel)}` : ""}
+          ${reportingWeekLabel ? `&nbsp;|&nbsp; Period: ${_esc(reportingWeekLabel)} (${_esc(String(year))})` : ""}
         </div>
       </div>
 
@@ -213,14 +213,21 @@ function _buildSlideHTML(state, computed) {
               <div class="slide-chart-area-col">
                 <div class="slide-chart-area-header">${AREA_LABELS[areaId]}${jumperHeaderCount}</div>
                 <div class="slide-chart-col-body">
-                  ${CATEGORY_LIST.map((category) => `
+                  ${CATEGORY_LIST.map((category) => {
+                    const theme = CATEGORY_COLORS[category];
+                    const indicatorColor = theme ? theme.base : "#475569";
+                    return `
                     <div class="slide-chart-cell">
-                      <div class="slide-chart-cell__title">${_esc(category)}</div>
+                      <div class="slide-chart-cell__title" style="display:flex;align-items:center;justify-content:center;gap:4px;">
+                        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background-color:${indicatorColor};"></span>
+                        <span>${_esc(category)}</span>
+                      </div>
                       <div class="slide-chart-cell__canvas-wrap">
                         <canvas id="${canvasId(areaId, category)}"></canvas>
                       </div>
                     </div>
-                  `).join("")}
+                  `;
+                  }).join("")}
                 </div>
               </div>
             `;
@@ -444,9 +451,9 @@ function _renderPlcChart(jumperPerPlc, ChartJS) {
     data: {
       labels: plcLabels,
       datasets: [
-        { label: "AFI",           data: afiData,  backgroundColor: "rgba(37,99,168,0.75)"  },
-        { label: "Shortbranches", data: sbData,   backgroundColor: "rgba(34,139,80,0.75)"  },
-        { label: "Forces",        data: forcData, backgroundColor: "rgba(180,60,40,0.75)"  },
+        { label: "AFI",           data: afiData,  backgroundColor: CATEGORY_COLORS.AFI?.base || "#00B0F0" },
+        { label: "Shortbranches", data: sbData,   backgroundColor: CATEGORY_COLORS.Shortbranches?.base || "#BFBFBF" },
+        { label: "Forces",        data: forcData, backgroundColor: CATEGORY_COLORS.Forces?.base || "#008577" },
       ],
     },
     options: {
