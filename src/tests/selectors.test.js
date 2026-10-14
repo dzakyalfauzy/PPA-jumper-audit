@@ -896,32 +896,40 @@ describe("Phase 5.4 — calculateAreaSummariesFromWeeklyChart & Week-40 Baseline
     expect(sorted).toEqual(["W1 ('25)", "W1 ('26)", "W2", "W9", "W10"]);
   });
 
-  test("Task H: Week-40 Baseline Validation menghasilkan KPI yang cocok dengan page 2 PDF reference", () => {
+  test("Task H: Week-40 Baseline Validation — schema baru (revisi form)", () => {
     const reg = WEEK_40_BASELINE.jumperRegister;
     expect(reg).toHaveLength(6);
+
+    // Semua record ID 3-digit numerik
+    expect(reg.every((r) => /^\d{3}$/.test(r.jumperId))).toBe(true);
+
+    // Field lama sudah dihapus dari baseline
+    expect(reg.every((r) => r.authorizationStatus === undefined)).toBe(true);
+    expect(reg.every((r) => r.mocStatus === undefined)).toBe(true);
+    expect(reg.every((r) => r.removalStatus === undefined)).toBe(true);
 
     const appConfig = {
       reporting: { identificationYearFilter: 2026 },
       discrepancyWarning: { enabled: true, basis: null },
     };
 
-    // Remaining Jumper without MOC: J-004, J-005, J-006 (Total = 3)
+    // BR-03: field dasar dihapus → ok:false (laporkan ambigu, jangan mengarang)
     const remaining = remainingJumperList(reg, appConfig);
-    expect(remaining.ok).toBe(true);
-    expect(remaining.data).toHaveLength(3);
+    expect(remaining.ok).toBe(false);
 
-    // Authorized/MOC count: J-001, J-002, J-003 (Total = 3)
+    // KPI Authorized/MoC: field dihapus → count 0 + warning ambigu
     const authMoc = authorizedMocCount(reg);
-    expect(authMoc.count).toBe(3);
+    expect(authMoc.count).toBe(0);
+    expect(authMoc.placeholderWarning).toMatch(/dihapus/);
 
-    // Total removed W40: 0
+    // Total removed W40: 0 (tidak ada field removal di schema baru)
     const removed = removedJumperCount(reg, 2026, "W40");
     expect(removed.count).toBe(0);
 
-    // Remaining PLC ratio: D3C, D3C1, CMS1, K2C -> 4 PLC aktif dari 69 in scope
+    // Remaining PLC ratio: PLC unik dari register = D3C, CMS1, K2 → 3 dari 69
     const plcRatio = remainingPlcRatio(reg, 69);
-    expect(plcRatio.activePlcCount).toBe(4);
+    expect(plcRatio.activePlcCount).toBe(3);
     expect(plcRatio.totalPlcInScope).toBe(69);
-    expect(plcRatio.ratio).toBeCloseTo(4 / 69, 5);
+    expect(plcRatio.ratio).toBeCloseTo(3 / 69, 5);
   });
 });

@@ -2,18 +2,12 @@
  * constants.js
  * Enum terpusat untuk PPA Jumper Audit Automation.
  *
- * PENTING — Status Open Questions:
- *   OQ-02: Daftar resmi MOC Status belum dikonfirmasi pemilik proses.
- *   OQ-03: Daftar resmi Authorization Status belum dikonfirmasi pemilik proses.
- *   OQ-06: Definisi "jumper aktif" (apakah hanya Removal=No?) belum dikonfirmasi.
- *   OQ-08: Definisi persis Authorized/MoC pada judul KPI belum dikonfirmasi.
- *
- * Enum di bawah adalah PLACEHOLDER awal berdasarkan PRD §8.5 dan Lampiran A.
- * Nilai dan label harus disesuaikan dengan terminologi pemilik proses sebelum
- * digunakan dalam laporan resmi. Tandai dengan [PLACEHOLDER] pada komentar.
- *
- * Jangan ubah key internal (e.g. AUTHORIZED) tanpa memperbarui semua referensi
- * di validation.js, selectors.js, dan config.js.
+ * Perubahan Phase 5.4 / Revision:
+ *   - Menambahkan PLC_BY_AREA: mapping area → daftar PLC resmi.
+ *   - Menambahkan JUMPER_STATUS (Normal/Upcoming/Due Soon/Expired), STATUS_COLORS,
+ *     dan threshold DUE_SOON_MAX_DAYS / UPCOMING_MAX_DAYS.
+ *   - AUTH_STATUS, MOC_STATUS, REMOVAL_STATUS, DUE_DATE_STATUS dipertahankan
+ *     untuk kompatibilitas backward; tidak digunakan pada form baru.
  */
 
 "use strict";
@@ -232,3 +226,58 @@ export const CHART_MATRIX = Object.freeze(
   )
 );
 // Hasil: 12 object { areaId, category } — index 0–11.
+
+// ---------------------------------------------------------------------------
+// PLC MAPPING PER AREA (Centralized — wajib selaras dengan form dan validasi)
+// ---------------------------------------------------------------------------
+export const PLC_BY_AREA = Object.freeze({
+  [AREA_IDS.DRYER_CM]: Object.freeze([
+    "D1C", "D2C", "D3C", "CMS1", "CM1", "CM BMS", "D1 BMS", "D2 BMS", "D3 BMS",
+    "RCS", "PUGM", "FEED", "500TEAST", "D12 DUST WEST"
+  ]),
+  [AREA_IDS.KILN_CTS]: Object.freeze([
+    "K1", "K2", "K3", "K4", "K5", "K1 BMS", "K2 BMS", "K3 BMS",
+    "CTT 1", "CTT 2", "CTT 3", "CTT 4", "CTT 5",
+    "CC1", "CC2", "CC3", "CC4", "CC5", "CC5A",
+    "DOS 1", "DOS 2", "KGS", "SLCU", "HSFO1", "HSFO2"
+  ]),
+  [AREA_IDS.FURNACE]: Object.freeze([
+    "F1 FPC MPC", "F1 Motor", "F1 Feed", "F1 Insmon",
+    "F2 FPC MPC", "F2 Motor", "F2 Feed", "F2 Mud Gun", "F2 Insmon",
+    "F3 FPC MPC", "F3 Motor", "F3 Feed", "F3 Insmon",
+    "F4 FPC MPC", "F4 Motor", "F4 Feed", "F4 Insmon", "F4 FCDS"
+  ]),
+  [AREA_IDS.CONVERTER]: Object.freeze([
+    "C2", "C3", "C4", "GPX", "SSX", "C_BMS"
+  ]),
+});
+
+// ---------------------------------------------------------------------------
+// JUMPER STATUS — Derived dari Due Date vs Tanggal Hari Ini
+// Tidak disimpan permanen di state; selalu dikalkulasi ulang saat dibutuhkan.
+// ---------------------------------------------------------------------------
+export const JUMPER_STATUS = Object.freeze({
+  NORMAL:   "Normal",
+  UPCOMING: "Upcoming",
+  DUE_SOON: "Due Soon",
+  EXPIRED:  "Expired",
+});
+
+/**
+ * Threshold hari (perbandingan kalender, bukan timestamp):
+ *   - diff < 0                 → Expired
+ *   - 0   .. DUE_SOON_MAX_DAYS → Due Soon (termasuk Due Date hari ini)
+ *   - +1  .. UPCOMING_MAX_DAYS → Upcoming
+ *   - >  UPCOMING_MAX_DAYS     → Normal
+ * Satu lokasi terpusat — dipakai form, preview, PPTX, dan validasi.
+ */
+export const DUE_SOON_MAX_DAYS = 7;
+export const UPCOMING_MAX_DAYS = 30;
+
+/** Palet warna setiap status jumper — digunakan di UI, Preview, dan PPTX. */
+export const STATUS_COLORS = Object.freeze({
+  [JUMPER_STATUS.NORMAL]:   { bg: "#DCFCE7", text: "#166534" },
+  [JUMPER_STATUS.UPCOMING]: { bg: "#DBEAFE", text: "#1D4ED8" },
+  [JUMPER_STATUS.DUE_SOON]: { bg: "#FEF3C7", text: "#92400E" },
+  [JUMPER_STATUS.EXPIRED]:  { bg: "#FEE2E2", text: "#991B1B" },
+});

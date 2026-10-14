@@ -33,10 +33,6 @@ import {
   AREA_IDS,
   AREA_ID_LIST,
   CATEGORIES,
-  AUTH_STATUS,
-  MOC_STATUS,
-  REMOVAL_STATUS,
-  DUE_DATE_STATUS,
 } from "../model/constants.js";
 
 import { createInitialState, createJumperRecord } from "../model/state.js";
@@ -74,19 +70,14 @@ function validWeeklyRow(overrides = {}) {
 
 function validJumperRecord(overrides = {}) {
   return createJumperRecord({
-    jumperId: "J-001",
-    plc: "PLC-A",
-    areaId: AREA_IDS.DRYER_CM,
-    category: CATEGORIES.AFI,
-    description: "Test jumper description",
-    installedWeekOrDate: "W35-2026",
-    authorizationStatus: AUTH_STATUS.AUTHORIZED,
-    mocStatus: MOC_STATUS.APPROVED_COMPLETE,
-    identificationYear: 2026,
-    removalStatus: REMOVAL_STATUS.NO,
-    dueDateStatus: DUE_DATE_STATUS.CONFIRMED,
-    dueDate: "2026-12-31",
-    quantity: 1,
+    jumperId:      "001",
+    plc:           "D3C", // valid untuk dryer_cm sesuai PLC_BY_AREA
+    areaId:        AREA_IDS.DRYER_CM,
+    category:      CATEGORIES.AFI,
+    description:   "Test jumper description",
+    equipmentTag:  null,
+    installedDate: "2026-01-15",
+    dueDate:       "2026-12-31",
     ...overrides,
   });
 }
@@ -305,20 +296,41 @@ describe("validateJumperRecord", () => {
   test("jumperId kosong menghasilkan error", () => {
     const result = validateJumperRecord(validJumperRecord({ jumperId: "" }));
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Jumper ID"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("ID"))).toBe(true);
+  });
+
+  test("jumperId non-3-digit numerik menghasilkan error — format ID baru", () => {
+    const result = validateJumperRecord(validJumperRecord({ jumperId: "J-001" }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("3 digit"))).toBe(true);
   });
 
   test("jumperId duplikat menghasilkan error — T-04", () => {
-    const existingIds = new Set(["J-001"]);
-    const result = validateJumperRecord(validJumperRecord({ jumperId: "J-001" }), existingIds);
+    const existingIds = new Set(["001"]);
+    const result = validateJumperRecord(validJumperRecord({ jumperId: "001" }), existingIds);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("J-001") && e.includes("unik"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("001") && e.includes("unik"))).toBe(true);
   });
 
   test("plc kosong menghasilkan error", () => {
     const result = validateJumperRecord(validJumperRecord({ plc: "" }));
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("PLC"))).toBe(true);
+  });
+
+  test("plc tidak terdaftar pada area menghasilkan error — mapping terpusat", () => {
+    const result = validateJumperRecord(
+      validJumperRecord({ plc: "NONEXISTENT-PLC" })
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("tidak terdaftar"))).toBe(true);
+  });
+
+  test("plc valid untuk area lain ditolak jika bukan milik area record", () => {
+    // C2 adalah PLC converter, bukan dryer_cm
+    const result = validateJumperRecord(validJumperRecord({ plc: "C2" }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("C2"))).toBe(true);
   });
 
   test("areaId tidak valid menghasilkan error", () => {
@@ -339,119 +351,51 @@ describe("validateJumperRecord", () => {
     expect(result.errors.some((e) => e.includes("Description"))).toBe(true);
   });
 
-  test("authorizationStatus Pending Confirmation tidak memenuhi syarat tapi valid secara field — BR-09", () => {
-    // Status pending adalah nilai VALID untuk field (diterima oleh enum)
-    // tetapi tidak dihitung memenuhi BR-04 (dikontrol di selectors.js, bukan di sini)
-    const result = validateJumperRecord(
-      validJumperRecord({ authorizationStatus: AUTH_STATUS.PENDING_CONFIRMATION })
-    );
-    expect(result.valid).toBe(true); // field valid — enum diizinkan
-  });
-
-  test("authorizationStatus nilai luar enum menghasilkan error", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({ authorizationStatus: "MaybeAuthorized" })
-    );
+  test("installedDate null menghasilkan error", () => {
+    const result = validateJumperRecord(validJumperRecord({ installedDate: null }));
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Authorization Status"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("Installed Date"))).toBe(true);
   });
 
-  test("mocStatus Pending adalah nilai valid untuk field", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({ mocStatus: MOC_STATUS.PENDING })
-    );
+  test("installedDate format salah menghasilkan error", () => {
+    const result = validateJumperRecord(validJumperRecord({ installedDate: "15/01/2026" }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("Installed Date"))).toBe(true);
+  });
+
+  test("installedDate tidak valid kalender (2026-02-31) menghasilkan error", () => {
+    const result = validateJumperRecord(validJumperRecord({ installedDate: "2026-02-31" }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("Installed Date"))).toBe(true);
+  });
+
+  test("dueDate null valid (opsional)", () => {
+    const result = validateJumperRecord(validJumperRecord({ dueDate: null }));
     expect(result.valid).toBe(true);
+    // Warning: status tidak dapat ditentukan
+    expect(result.warnings.some((w) => w.includes("Due Date kosong"))).toBe(true);
   });
 
-  test("mocStatus nilai luar enum menghasilkan error", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({ mocStatus: "Unknown" })
-    );
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("MOC Status"))).toBe(true);
-  });
-
-  test("identificationYear null menghasilkan error", () => {
-    const result = validateJumperRecord(validJumperRecord({ identificationYear: null }));
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Identification Year"))).toBe(true);
-  });
-
-  test("removalStatus Yes tanpa removalWeek menghasilkan error", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({
-        removalStatus: REMOVAL_STATUS.YES,
-        removalWeek: null,
-        removalYear: 2026,
-      })
-    );
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Removal Week"))).toBe(true);
-  });
-
-  test("removalStatus Yes tanpa removalYear menghasilkan error", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({
-        removalStatus: REMOVAL_STATUS.YES,
-        removalWeek: "W40",
-        removalYear: null,
-      })
-    );
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Removal Year"))).toBe(true);
-  });
-
-  test("removalStatus Yes dengan week dan year valid lulus", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({
-        removalStatus: REMOVAL_STATUS.YES,
-        removalWeek: "W40",
-        removalYear: 2026,
-      })
-    );
-    expect(result.valid).toBe(true);
-  });
-
-  test("removalStatus No tanpa removalWeek/Year valid", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({
-        removalStatus: REMOVAL_STATUS.NO,
-        removalWeek: null,
-        removalYear: null,
-      })
-    );
-    expect(result.valid).toBe(true);
-  });
-
-  test("quantity 0 menghasilkan error", () => {
-    const result = validateJumperRecord(validJumperRecord({ quantity: 0 }));
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Quantity"))).toBe(true);
-  });
-
-  test("quantity 3 valid — T-10 basis", () => {
-    const result = validateJumperRecord(validJumperRecord({ quantity: 3 }));
-    expect(result.valid).toBe(true);
-  });
-
-  test("quantity negatif menghasilkan error", () => {
-    const result = validateJumperRecord(validJumperRecord({ quantity: -1 }));
-    expect(result.valid).toBe(false);
-  });
-
-  test("dueDateStatus confirmed tanpa dueDate menghasilkan error", () => {
-    const result = validateJumperRecord(
-      validJumperRecord({ dueDateStatus: DUE_DATE_STATUS.CONFIRMED, dueDate: null })
-    );
+  test("dueDate format salah menghasilkan error", () => {
+    const result = validateJumperRecord(validJumperRecord({ dueDate: "31-12-2026" }));
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("Due Date"))).toBe(true);
   });
 
-  test("dueDateStatus unconfirmed tanpa dueDate valid", () => {
+  test("dueDate sebelum installedDate menghasilkan warning, bukan error", () => {
     const result = validateJumperRecord(
-      validJumperRecord({ dueDateStatus: DUE_DATE_STATUS.UNCONFIRMED, dueDate: null })
+      validJumperRecord({ installedDate: "2026-06-01", dueDate: "2026-05-01" })
     );
     expect(result.valid).toBe(true);
+    expect(result.warnings.some((w) => w.includes("lebih awal"))).toBe(true);
+  });
+
+  test("dueDate lewat menghasilkan warning Expired", () => {
+    const result = validateJumperRecord(
+      validJumperRecord({ dueDate: "2000-01-01" })
+    );
+    expect(result.valid).toBe(true);
+    expect(result.warnings.some((w) => w.includes("Expired"))).toBe(true);
   });
 });
 
@@ -467,19 +411,19 @@ describe("validateJumperRegister", () => {
 
   test("dua record ID berbeda valid", () => {
     const result = validateJumperRegister([
-      validJumperRecord({ jumperId: "J-001" }),
-      validJumperRecord({ jumperId: "J-002" }),
+      validJumperRecord({ jumperId: "001" }),
+      validJumperRecord({ jumperId: "002" }),
     ]);
     expect(result.valid).toBe(true);
   });
 
   test("dua record ID sama menghasilkan error — T-04", () => {
     const result = validateJumperRegister([
-      validJumperRecord({ jumperId: "J-001" }),
-      validJumperRecord({ jumperId: "J-001" }),
+      validJumperRecord({ jumperId: "001" }),
+      validJumperRecord({ jumperId: "001" }),
     ]);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("J-001") && e.includes("unik"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("001") && e.includes("unik"))).toBe(true);
   });
 });
 

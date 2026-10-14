@@ -311,112 +311,64 @@ export const WEEK_40_BASELINE = Object.freeze({
   ],
   jumperRegister: [
     {
-      jumperId: "J-001",
+      jumperId: "001",
       plc: "D3C",
       areaId: "dryer_cm",
       category: "Shortbranches",
       description: "Shortbranches installed on PLC D3C, FSL (Flow Switch Low) Feed conv. Dryer 3",
       equipmentTag: null,
-      installedWeekOrDate: "Wk10 2026",
-      authorizationStatus: "Authorized",
-      mocStatus: "Approved/Complete",
-      identificationYear: 2026,
-      removalStatus: "No",
-      removalWeek: null,
-      removalYear: null,
-      dueDateStatus: "confirmed",
-      dueDate: "Wk51 2026",
-      quantity: 1,
+      installedDate: "2026-03-07",
+      dueDate: null,
     },
     {
-      jumperId: "J-002",
-      plc: "D3C1",
+      jumperId: "002",
+      plc: "D3C",
       areaId: "dryer_cm",
       category: "Shortbranches",
       description: "Shortbranches installed on PLC D3C MainFlame On Interlock to TR ESP",
       equipmentTag: null,
-      installedWeekOrDate: "wk16",
-      authorizationStatus: "Authorized",
-      mocStatus: "Approved/Complete",
-      identificationYear: 2026,
-      removalStatus: "No",
-      removalWeek: null,
-      removalYear: null,
-      dueDateStatus: "unconfirmed",
+      installedDate: "2026-04-18",
       dueDate: null,
-      quantity: 1,
     },
     {
-      jumperId: "J-003",
+      jumperId: "003",
       plc: "CMS1",
       areaId: "dryer_cm",
       category: "Forces",
       description: "Forces installed on PLC CMS1 Level HiHi Switch Surge Bin - Digital_Alarms",
       equipmentTag: null,
-      installedWeekOrDate: "Re-installed wk27",
-      authorizationStatus: "Authorized",
-      mocStatus: "Approved/Complete",
-      identificationYear: 2026,
-      removalStatus: "No",
-      removalWeek: null,
-      removalYear: null,
-      dueDateStatus: "confirmed",
-      dueDate: "Wk27 2026",
-      quantity: 1,
+      installedDate: "2026-07-04",
+      dueDate: null,
     },
     {
-      jumperId: "J-004",
-      plc: "K2C",
+      jumperId: "004",
+      plc: "K2",
       areaId: "kiln_cts",
       category: "AFI",
-      description: "Conveying Blower opr ready E4AM01 on PLC K2C",
+      description: "Conveying Blower opr ready E4AM01 on PLC K2",
       equipmentTag: null,
-      installedWeekOrDate: "Wk39 2026",
-      authorizationStatus: "Not Authorized",
-      mocStatus: "Not Available",
-      identificationYear: 2026,
-      removalStatus: "No",
-      removalWeek: null,
-      removalYear: null,
-      dueDateStatus: "unconfirmed",
+      installedDate: "2026-09-27",
       dueDate: null,
-      quantity: 1,
     },
     {
-      jumperId: "J-005",
-      plc: "K2C",
+      jumperId: "005",
+      plc: "K2",
       areaId: "kiln_cts",
       category: "AFI",
-      description: "Conveying Blower opr ready H21M03 on PLC K2C",
+      description: "Conveying Blower opr ready H21M03 on PLC K2",
       equipmentTag: null,
-      installedWeekOrDate: "Wk39 2026",
-      authorizationStatus: "Not Authorized",
-      mocStatus: "Not Available",
-      identificationYear: 2026,
-      removalStatus: "No",
-      removalWeek: null,
-      removalYear: null,
-      dueDateStatus: "unconfirmed",
+      installedDate: "2026-09-27",
       dueDate: null,
-      quantity: 1,
     },
     {
-      jumperId: "J-006",
-      plc: "K2C",
+      jumperId: "006",
+      plc: "K2",
       areaId: "kiln_cts",
       category: "AFI",
-      description: "Conveying Blower opr ready H21M04 on PLC K2C",
+      description: "Conveying Blower opr ready H21M04 on PLC K2",
       equipmentTag: null,
-      installedWeekOrDate: "Wk39 2026",
-      authorizationStatus: "Not Authorized",
-      mocStatus: "Not Available",
-      identificationYear: 2026,
-      removalStatus: "No",
-      removalWeek: null,
-      removalYear: null,
-      dueDateStatus: "unconfirmed",
+      installedDate: "2026-09-27",
       dueDate: null,
-      quantity: 1,
     },
   ],
 });
@@ -428,9 +380,23 @@ export function loadPersistedState() {
     if (typeof window !== "undefined" && window.localStorage) {
       const serialized = window.localStorage.getItem(STORAGE_KEY);
       if (serialized) {
-        const parsed = JSON.parse(serialized);
+        let parsed = JSON.parse(serialized);
         if (parsed && parsed.config && Array.isArray(parsed.jumperRegister)) {
+          // Deteksi schema lama: record punya field authorizationStatus/mocStatus
+          // atau jumperId bukan 3-digit numerik → migrasikan ke schema baru.
+          const isLegacy = parsed.jumperRegister.some(
+            (r) =>
+              r.authorizationStatus !== undefined ||
+              r.mocStatus !== undefined ||
+              r.removalStatus !== undefined ||
+              r.installedWeekOrDate !== undefined ||
+              !/^\d{3}$/.test(String(r.jumperId || ""))
+          );
+          if (isLegacy) {
+            parsed.jumperRegister = migrateJumperRecords(parsed.jumperRegister);
+          }
           _state = parsed;
+          savePersistedState();
           return true;
         }
       }
@@ -474,41 +440,80 @@ export function initInitialDataset() {
 
 /**
  * Membuat object record jumper dengan semua field terdefinisi.
- * Nilai default: null untuk field opsional, 1 untuk quantity.
- * Pemanggil harus mengisi field wajib sebelum memanggil addJumperRecord().
- *
- * Field Due Date disimpan terpisah: dueDate (nilai) dan dueDateStatus (konfirmasi).
- * Ini mengikuti §8.6 — jangan gabungkan menjadi satu string.
+ * Schema baru (simplified): jumperId, plc, areaId, category, description, equipmentTag,
+ *   installedDate (YYYY-MM-DD), dueDate (YYYY-MM-DD | null).
  *
  * @param {Partial<jumperRecord>} overrides
  * @returns {object}
  */
 export function createJumperRecord(overrides = {}) {
   return {
-    // Identity (§8.4)
-    jumperId:            null,  // string unik; wajib
-    plc:                 null,  // string; wajib
-    areaId:              null,  // AREA_IDS value; wajib
-    category:            null,  // CATEGORIES value; wajib
-    description:         null,  // string; wajib
-    equipmentTag:        null,  // string; opsional
-
-    // Status dan Periode (§8.5)
-    installedWeekOrDate: null,  // string; wajib
-    authorizationStatus: null,  // AUTH_STATUS value; wajib
-    mocStatus:           null,  // MOC_STATUS value; wajib
-    identificationYear:  null,  // integer tahun valid; wajib (digunakan BR-03)
-    removalStatus:       null,  // REMOVAL_STATUS value; wajib
-    removalWeek:         null,  // string label minggu; wajib jika removalStatus = Yes
-    removalYear:         null,  // integer; wajib jika removalStatus = Yes
-
-    // Due Date (§8.6) — simpan terpisah
-    dueDate:             null,  // string tanggal atau null jika unconfirmed
-    dueDateStatus:       null,  // DUE_DATE_STATUS value; wajib
-
-    // Kuantitas — digunakan di SEMUA agregasi (BR-04, BR-05, BR-07)
-    quantity:            1,     // integer >= 1; default 1
-
+    jumperId:      null,  // string 3-digit unik, e.g. "001"; wajib
+    plc:           null,  // string dari PLC_BY_AREA; wajib
+    areaId:        null,  // AREA_IDS value; wajib
+    category:      null,  // CATEGORIES value; wajib
+    description:   null,  // string; wajib
+    equipmentTag:  null,  // string; opsional
+    installedDate: null,  // YYYY-MM-DD; wajib
+    dueDate:       null,  // YYYY-MM-DD | null
     ...overrides,
   };
+}
+
+/**
+ * Generate next three-digit jumper ID dari register yang sudah ada.
+ * Format: "001", "002", ... "999".
+ * @param {object[]} jumperRegister
+ * @returns {string}
+ */
+export function nextJumperId(jumperRegister = []) {
+  const max = jumperRegister.reduce((acc, r) => {
+    const n = parseInt(r.jumperId, 10);
+    return !isNaN(n) && n > acc ? n : acc;
+  }, 0);
+  return String(max + 1).padStart(3, "0");
+}
+
+/**
+ * Migrasi record lama (schema J-001) ke schema baru ("001").
+ * Dipanggil saat loadPersistedState menemukan state dengan format lama.
+ * @param {object[]} records
+ * @returns {object[]}
+ */
+export function migrateJumperRecords(records = []) {
+  const isIsoDate = (v) =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+  return records.map((r, i) => {
+    // Normalize jumperId
+    let jumperId = String(r.jumperId || "").trim();
+    // Pattern lama: "J-001" → "001"
+    const legacyMatch = jumperId.match(/^J-?(\d+)$/i);
+    if (legacyMatch) {
+      jumperId = String(parseInt(legacyMatch[1], 10)).padStart(3, "0");
+    }
+    // Jika belum 3-digit numerik, generate dari posisi
+    if (!/^\d{3}$/.test(jumperId)) {
+      jumperId = String(i + 1).padStart(3, "0");
+    }
+
+    // installedDate: legacy menyimpan week string ("Wk10 2026") → null
+    const installedDate = isIsoDate(r.installedDate) ? r.installedDate : null;
+    // dueDate: hanya valid jika ISO; week string / unconfirmed → null
+    const dueDate =
+      isIsoDate(r.dueDate) && r.dueDateStatus !== "unconfirmed"
+        ? r.dueDate
+        : null;
+
+    return {
+      jumperId,
+      plc:           r.plc || null,
+      areaId:        r.areaId || null,
+      category:      r.category || null,
+      description:   r.description || null,
+      equipmentTag:  r.equipmentTag || null,
+      installedDate,
+      dueDate,
+    };
+  });
 }

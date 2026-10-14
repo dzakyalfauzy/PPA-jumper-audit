@@ -27,6 +27,7 @@ import { mountFormReportInfo, setDiscrepancyWarnings } from "./formReportInfo.js
 import { mountFormWeeklyChart, refreshFormWeeklyChart } from "./formWeeklyChart.js";
 import { mountFormRegister } from "./formRegister.js";
 import { renderSlidePreview } from "../preview/slidePreview.js";
+import { exportToPowerPoint } from "../export/pptxExporter.js";
 
 // ---------------------------------------------------------------------------
 // MODULE STATE
@@ -57,6 +58,24 @@ export function initApp() {
     document.getElementById("section-register"),
     { onStateChange: _onStateChange }
   );
+
+  // Bind Export PPTX button
+  const exportPptxBtn = document.getElementById("btn-export-pptx");
+  if (exportPptxBtn) {
+    exportPptxBtn.addEventListener("click", async () => {
+      try {
+        exportPptxBtn.disabled = true;
+        exportPptxBtn.textContent = "Mengunduh PPTX...";
+        const currentState = getState();
+        await exportToPowerPoint(currentState);
+      } catch (err) {
+        alert(`Gagal mengekspor PowerPoint: ${err.message}`);
+      } finally {
+        exportPptxBtn.disabled = false;
+        exportPptxBtn.textContent = "Download PPTX";
+      }
+    });
+  }
 
   // Initial render
   _onStateChange();
@@ -109,11 +128,18 @@ function _updateStatusPanel(state) {
   const hasErrors   = result.errors.length > 0;
   const hasWarnings = result.warnings.length > 0;
   
-  // Also keep the export buttons disabled correctly, though in this phase they are always disabled because phase 6/7 are not yet implemented.
-  // We'll leave them disabled.
+  const exportPptxBtn = document.getElementById("btn-export-pptx");
+  if (exportPptxBtn) {
+    exportPptxBtn.disabled = hasErrors;
+    if (hasErrors) {
+      exportPptxBtn.title = "Export diblokir karena terdapat error validasi";
+    } else {
+      exportPptxBtn.title = "Download PowerPoint Editable (16:9)";
+    }
+  }
 
   if (!hasErrors && !hasWarnings) {
-    panel.innerHTML = `<div class="alert alert--info">✓ Tidak ada error. Preview aktif. Export tersedia di Phase 6–7.</div>`;
+    panel.innerHTML = `<div class="alert alert--info">✓ Tidak ada error. Preview aktif. Klik "Download PPTX" untuk mengunduh laporan editable.</div>`;
     return;
   }
 

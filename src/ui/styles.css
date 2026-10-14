@@ -573,7 +573,7 @@ body {
 
 /* 12 Charts Grid: 4 area columns × 3 category rows (Task D) */
 .slide-charts-grid-4col {
-  flex: 1;
+  flex: 3 1 0; /* ambil ~75% ruang vertikal tersisa */
   overflow: hidden;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -614,19 +614,21 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 .slide-chart-cell__title {
-  font-size: 0.68em;
+  font-size: 0.72em;
   font-weight: 600;
   color: var(--color-primary);
   text-align: center;
   flex-shrink: 0;
+  margin-bottom: 2px;
 }
 .slide-chart-cell__canvas-wrap {
   flex: 1;
   position: relative;
   overflow: hidden;
-  min-height: 0;
+  min-height: 120px; /* ensure readable chart height */
 }
 .slide-chart-cell__canvas-wrap canvas {
   position: absolute;
@@ -635,43 +637,23 @@ body {
   height: 100% !important;
 }
 
-/* Bottom-left: KPI row + Update Table */
+/* Bottom-left: Update Table (kartu KPI ringkasan status dihapus) */
 .slide-bottom-left {
-  flex-shrink: 0;
+  flex: 1 1 0; /* ambil ~25% ruang vertikal tersisa, isi di bawah charts */
+  min-height: 0;
   border-top: 1px solid var(--color-border);
   padding-top: 3px;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.slide-kpi-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-}
-.slide-kpi-box {
-  background: var(--color-accent);
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  padding: 3px 6px;
-}
-.slide-kpi-box__label {
-  font-size: 0.65em;
-  color: var(--color-text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .03em;
-}
-.slide-kpi-box__value {
-  font-size: 1.5em;
-  font-weight: 700;
-  color: var(--color-primary);
-}
-.slide-kpi-box__note { font-size: 0.6em; }
 
-/* Jumper Update Table */
+/* Jumper Update Table — mengisi ruang vertikal yang tersedia secara proporsional */
 .slide-update-table-wrap {
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .slide-section-title {
   font-size: 0.72em;
@@ -683,24 +665,25 @@ body {
 }
 .slide-update-table-scroll {
   overflow-x: auto;
-  max-height: 80px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 .slide-update-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.7em;
+  font-size: 0.75em;
 }
 .slide-update-table th {
   background: var(--color-primary);
   color: #fff;
-  padding: 2px 4px;
-  font-size: 0.9em;
+  padding: 3px 6px;
+  font-size: 0.95em;
   white-space: nowrap;
   text-align: left;
 }
 .slide-update-table td {
-  padding: 1px 4px;
+  padding: 2px 6px;
   border-bottom: 1px solid #e0e8f0;
   vertical-align: middle;
 }
@@ -721,7 +704,7 @@ body {
 
 /* Remaining Jumper List */
 .slide-remaining-panel {
-  flex: 1;
+  flex: 1.5 1 0; /* sedikini lebih kecil dari chart section */
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -731,19 +714,19 @@ body {
   color: #fff;
   border-radius: 20px;
   padding: 0 5px;
-  font-size: 0.75em;
+  font-size: 0.8em;
   font-weight: 600;
   margin-left: 4px;
 }
 .slide-remaining-list {
   overflow-y: auto;
   flex: 1;
-  font-size: 0.72em;
+  font-size: 0.78em;
 }
 .slide-remaining-item {
   display: flex;
   gap: 4px;
-  padding: 1px 0;
+  padding: 2px 0;
   border-bottom: 1px solid #eef2f8;
   align-items: baseline;
 }
@@ -751,7 +734,7 @@ body {
 .slide-remaining-item__id    { font-weight: 600; flex-shrink: 0; }
 .slide-remaining-item__plc   { color: var(--color-primary-lt); flex-shrink: 0; }
 .slide-remaining-item__desc  { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.slide-remaining-criteria    { font-size: 0.62em; color: var(--color-text-muted); margin-top: 2px; }
+.slide-remaining-criteria    { font-size: 0.68em; color: var(--color-text-muted); margin-top: 2px; }
 
 /* Overflow warning */
 .slide-overflow-warning {
@@ -769,33 +752,38 @@ body {
 .slide-plc-ratio {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
   background: var(--color-accent);
   border: 1px solid var(--color-border);
   border-radius: 3px;
-  padding: 3px 6px;
+  padding: 4px 8px;
 }
 .slide-plc-ratio__fraction {
-  font-size: 1.2em;
+  font-size: 1.3em;
   font-weight: 700;
   color: var(--color-primary);
 }
 .slide-plc-ratio__pct {
-  font-size: 1.5em;
+  font-size: 1.7em;
   font-weight: 700;
   color: var(--color-primary-lt);
 }
 .slide-plc-ratio__label {
-  font-size: 0.65em;
+  font-size: 0.72em;
   color: var(--color-text-muted);
 }
 
 /* PLC chart */
-.slide-plc-chart-section { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.slide-plc-chart-section { 
+  flex: 2.5 1 0; /* ambil lebih banyak ruang untuk chart PLC */
+  overflow: hidden; 
+  display: flex; 
+  flex-direction: column; 
+}
 .slide-plc-chart-wrap {
   flex: 1;
   position: relative;
-  min-height: 0;
+  min-height: 220px; /* ensure readable chart height */
 }
 .slide-plc-chart-wrap canvas {
   position: absolute;

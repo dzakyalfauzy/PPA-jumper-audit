@@ -1,16 +1,16 @@
 /**
  * formRegister.js
- * Form B: Jumper Register — CRUD lengkap.
+ * Form B: Jumper Register — CRUD (schema baru, revisi).
  *
  * Tanggung jawab:
- *   - Render tabel ringkasan Jumper Register.
- *   - Modal Add/Edit dengan seluruh 15 field data model (§8.4, §8.5, §8.6).
- *   - Hapus record dengan konfirmasi.
- *   - Dropdown untuk semua enum (area, category, authStatus, mocStatus, removalStatus, dueDateStatus).
- *   - Due Date dan Due Date Status disimpan sebagai dua field terpisah (§8.6).
- *   - Removal Week dan Removal Year hanya ditampilkan jika Removal Status = Yes.
+ *   - Render tabel ringkasan Jumper Register: ID | PLC | Area | Category |
+ *     Installed | Due Date | Status | Aksi.
+ *   - Modal Add/Edit: ID numerik 3-digit, Area → dropdown PLC tergantung area
+ *     (PLC_BY_AREA), Installed Date & Due Date (type="date", YYYY-MM-DD).
+ *   - Status (Normal / Upcoming / Due Soon / Expired) DIHITUNG dari Due Date — bukan input.
+ *   - Field lama (Authorization, MOC, Identification Year, Removal, Quantity,
+ *     Due Date Status) tidak lagi ada pada form maupun data model.
  *   - Validasi semua field wajib; error ditampilkan dekat input.
- *   - Enum placeholder ditandai dengan badge "[sementara]".
  *   - Memanggil onStateChange setiap ada perubahan.
  *
  * Prinsip:
@@ -23,10 +23,11 @@
 import {
   AREA_ID_LIST, AREA_LABELS,
   CATEGORY_LIST,
-  AUTH_STATUS_LIST,
-  MOC_STATUS_LIST,
-  REMOVAL_STATUS, REMOVAL_STATUS_LIST,
-  DUE_DATE_STATUS, DUE_DATE_STATUS_LIST,
+  PLC_BY_AREA,
+  JUMPER_STATUS,
+  STATUS_COLORS,
+  DUE_SOON_MAX_DAYS,
+  UPCOMING_MAX_DAYS,
 } from "../model/constants.js";
 import {
   getJumperRegister,
@@ -34,9 +35,11 @@ import {
   updateJumperRecord,
   deleteJumperRecord,
   createJumperRecord,
+  nextJumperId,
   resetToBaseline,
 } from "../model/state.js";
 import { validateJumperRecord } from "../model/validation.js";
+import { getJumperStatus } from "../logic/selectors.js";
 
 // ---------------------------------------------------------------------------
 // MODULE STATE
@@ -65,10 +68,10 @@ export function refreshFormRegister(container) {
 
 function _render(container) {
   let data = getJumperRegister();
-  
+
   if (_searchQuery) {
     const q = _searchQuery.toLowerCase();
-    data = data.filter(r => 
+    data = data.filter(r =>
       (r.jumperId && r.jumperId.toLowerCase().includes(q)) ||
       (r.plc && r.plc.toLowerCase().includes(q)) ||
       (r.description && r.description.toLowerCase().includes(q))
@@ -85,10 +88,13 @@ function _render(container) {
       <button class="btn btn--primary btn--sm" id="reg-add-btn" type="button">+ Tambah Jumper Baru</button>
     </div>
 
-    <!-- enum placeholder notice -->
-    <div class="oq-banner">
-      <strong>OQ-02, OQ-03:</strong> Nilai Authorization Status dan MOC Status masih
-      <em>placeholder</em>. Konfirmasi dengan pemilik proses sebelum digunakan dalam laporan resmi.
+    <!-- status legend -->
+    <div class="oq-banner" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+      <strong>Status dihitung otomatis dari Due Date:</strong>
+      <span style="background:${STATUS_COLORS[JUMPER_STATUS.NORMAL].bg};color:${STATUS_COLORS[JUMPER_STATUS.NORMAL].text};padding:2px 10px;border-radius:10px;font-weight:600;">Normal (&gt; ${UPCOMING_MAX_DAYS} hari)</span>
+      <span style="background:${STATUS_COLORS[JUMPER_STATUS.UPCOMING].bg};color:${STATUS_COLORS[JUMPER_STATUS.UPCOMING].text};padding:2px 10px;border-radius:10px;font-weight:600;">Upcoming (${DUE_SOON_MAX_DAYS + 1}–${UPCOMING_MAX_DAYS} hari)</span>
+      <span style="background:${STATUS_COLORS[JUMPER_STATUS.DUE_SOON].bg};color:${STATUS_COLORS[JUMPER_STATUS.DUE_SOON].text};padding:2px 10px;border-radius:10px;font-weight:600;">Due Soon (0–${DUE_SOON_MAX_DAYS} hari)</span>
+      <span style="background:${STATUS_COLORS[JUMPER_STATUS.EXPIRED].bg};color:${STATUS_COLORS[JUMPER_STATUS.EXPIRED].text};padding:2px 10px;border-radius:10px;font-weight:600;">Expired (lewat)</span>
     </div>
 
     <!-- table -->
@@ -96,14 +102,13 @@ function _render(container) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Jumper ID</th>
+            <th>ID</th>
             <th>PLC</th>
             <th>Area</th>
             <th>Category</th>
-            <th>Auth Status</th>
-            <th>MOC Status</th>
-            <th>Removal</th>
-            <th>Qty</th>
+            <th>Installed</th>
+            <th>Due Date</th>
+            <th>Status</th>
             <th>Aksi</th>
           </tr>
         </thead>
@@ -135,9 +140,18 @@ function _render(container) {
   _bindEvents(container);
 }
 
+function _statusBadge(dueDate) {
+  const status = getJumperStatus(dueDate);
+  if (!status) {
+    return `<span class="text-muted" title="Due Date kosong/tidak valid — status tidak dapat ditentukan">—</span>`;
+  }
+  const c = STATUS_COLORS[status];
+  return `<span style="background:${c.bg};color:${c.text};padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">${_esc(status)}</span>`;
+}
+
 function _renderRows(data) {
   if (data.length === 0) {
-    return `<tr><td colspan="9" class="empty-state">Belum ada data.</td></tr>`;
+    return `<tr><td colspan="8" class="empty-state">Belum ada data.</td></tr>`;
   }
   return data.map((r) => `
     <tr>
@@ -145,13 +159,9 @@ function _renderRows(data) {
       <td>${_esc(r.plc)}</td>
       <td>${AREA_LABELS[r.areaId] || _esc(r.areaId)}</td>
       <td>${_esc(r.category)}</td>
-      <td><span class="text-muted">${_esc(r.authorizationStatus)}</span></td>
-      <td><span class="text-muted">${_esc(r.mocStatus)}</span></td>
-      <td>${r.removalStatus === REMOVAL_STATUS.YES
-          ? `<span class="text-danger">Removed (${_esc(r.removalWeek||"")} ${_esc(r.removalYear||"")})</span>`
-          : `<span class="text-muted">Active</span>`
-        }</td>
-      <td>${r.quantity ?? 1}</td>
+      <td>${_esc(r.installedDate) || '<span class="text-muted">—</span>'}</td>
+      <td>${_esc(r.dueDate) || '<span class="text-muted">—</span>'}</td>
+      <td>${_statusBadge(r.dueDate)}</td>
       <td class="cell-actions">
         <button class="btn btn--ghost btn--sm" data-edit-id="${_esc(r.jumperId)}" type="button">Edit</button>
         <button class="btn btn--danger btn--sm" data-delete-id="${_esc(r.jumperId)}" type="button">Hapus</button>
@@ -165,12 +175,8 @@ function _renderRows(data) {
 // ---------------------------------------------------------------------------
 
 function _buildModalForm() {
-  const areaOptions   = AREA_ID_LIST.map((id) => `<option value="${id}">${AREA_LABELS[id]}</option>`).join("");
-  const catOptions    = CATEGORY_LIST.map((c) => `<option value="${c}">${c}</option>`).join("");
-  const authOptions   = AUTH_STATUS_LIST.map((v) => `<option value="${_esc(v)}">${_esc(v)}</option>`).join("");
-  const mocOptions    = MOC_STATUS_LIST.map((v) => `<option value="${_esc(v)}">${_esc(v)}</option>`).join("");
-  const remOptions    = REMOVAL_STATUS_LIST.map((v) => `<option value="${_esc(v)}">${_esc(v)}</option>`).join("");
-  const dueSOptions   = DUE_DATE_STATUS_LIST.map((v) => `<option value="${_esc(v)}">${v === DUE_DATE_STATUS.CONFIRMED ? "Dikonfirmasi (ada tanggal)" : "Belum dikonfirmasi"}</option>`).join("");
+  const areaOptions = AREA_ID_LIST.map((id) => `<option value="${id}">${AREA_LABELS[id]}</option>`).join("");
+  const catOptions  = CATEGORY_LIST.map((c) => `<option value="${c}">${c}</option>`).join("");
 
   return `
     <div class="alert alert--error" id="reg-form-errors" style="display:none;"></div>
@@ -180,15 +186,9 @@ function _buildModalForm() {
     <div class="form-grid">
 
       <div class="form-group">
-        <label class="form-label" for="rf-id">Jumper ID <span class="required">*</span></label>
-        <input type="text" id="rf-id" class="form-input" placeholder="Misal: J-001" />
+        <label class="form-label" for="rf-id">ID <span class="required">*</span></label>
+        <input type="text" id="rf-id" class="form-input" placeholder="Misal: 007" maxlength="3" inputmode="numeric" pattern="[0-9]{3}" />
         <div class="field-error" id="rf-err-id"></div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="rf-plc">PLC <span class="required">*</span></label>
-        <input type="text" id="rf-plc" class="form-input" placeholder="Misal: PLC-101" />
-        <div class="field-error" id="rf-err-plc"></div>
       </div>
 
       <div class="form-group">
@@ -197,6 +197,14 @@ function _buildModalForm() {
           <option value="">-- Pilih --</option>${areaOptions}
         </select>
         <div class="field-error" id="rf-err-area"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="rf-plc">PLC <span class="required">*</span></label>
+        <select id="rf-plc" class="form-select" disabled>
+          <option value="">-- Pilih Area dahulu --</option>
+        </select>
+        <div class="field-error" id="rf-err-plc"></div>
       </div>
 
       <div class="form-group">
@@ -222,97 +230,21 @@ function _buildModalForm() {
 
     <hr class="divider" />
 
-    <!-- ─── SECTION 2: Status & Periode ─── -->
-    <p class="form-label" style="margin-bottom:8px;">Status dan Periode</p>
+    <!-- ─── SECTION 2: Tanggal ─── -->
+    <p class="form-label" style="margin-bottom:8px;">Tanggal</p>
     <div class="form-grid">
 
       <div class="form-group">
-        <label class="form-label" for="rf-installed">Installed Week/Date <span class="required">*</span></label>
-        <input type="text" id="rf-installed" class="form-input" placeholder="Misal: W35-2026 atau 2026-09-01" />
+        <label class="form-label" for="rf-installed">Installed Date <span class="required">*</span></label>
+        <input type="date" id="rf-installed" class="form-input" />
         <div class="field-error" id="rf-err-installed"></div>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="rf-id-year">
-          Identification Year <span class="required">*</span>
-        </label>
-        <input type="number" id="rf-id-year" class="form-input" min="2000" max="2100" placeholder="2026" />
-        <div class="field-error" id="rf-err-id-year"></div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="rf-auth">
-          Authorization Status <span class="required">*</span>
-          <span class="placeholder-badge">sementara</span>
-        </label>
-        <select id="rf-auth" class="form-select">
-          <option value="">-- Pilih --</option>${authOptions}
-        </select>
-        <div class="field-error" id="rf-err-auth"></div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="rf-moc">
-          MOC Status <span class="required">*</span>
-          <span class="placeholder-badge">sementara</span>
-        </label>
-        <select id="rf-moc" class="form-select">
-          <option value="">-- Pilih --</option>${mocOptions}
-        </select>
-        <div class="field-error" id="rf-err-moc"></div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="rf-removal">Removal Status <span class="required">*</span></label>
-        <select id="rf-removal" class="form-select">
-          <option value="">-- Pilih --</option>${remOptions}
-        </select>
-        <div class="field-error" id="rf-err-removal"></div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="rf-qty">Quantity <span class="required">*</span></label>
-        <input type="number" id="rf-qty" class="form-input" min="1" step="1" value="1" />
-        <div class="field-error" id="rf-err-qty"></div>
-      </div>
-
-    </div>
-
-    <!-- Removal detail — ditampilkan hanya jika Removal = Yes -->
-    <div id="rf-removal-detail" style="display:none;" class="form-grid" style="margin-top:8px;">
-      <div class="form-group">
-        <label class="form-label" for="rf-removal-week">Removal Week <span class="required">*</span></label>
-        <input type="text" id="rf-removal-week" class="form-input" placeholder="Misal: W40" />
-        <div class="field-error" id="rf-err-removal-week"></div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="rf-removal-year">Removal Year <span class="required">*</span></label>
-        <input type="number" id="rf-removal-year" class="form-input" min="2000" max="2100" placeholder="2026" />
-        <div class="field-error" id="rf-err-removal-year"></div>
-      </div>
-    </div>
-
-    <hr class="divider" />
-
-    <!-- ─── SECTION 3: Due Date (terpisah) ─── -->
-    <p class="form-label" style="margin-bottom:8px;">Due Date <span class="text-muted" style="text-transform:none;font-weight:400;">(§8.6 — nilai dan status disimpan terpisah)</span></p>
-    <div class="form-grid">
-
-      <div class="form-group">
-        <label class="form-label" for="rf-due-status">Due Date Status <span class="required">*</span></label>
-        <select id="rf-due-status" class="form-select">
-          <option value="">-- Pilih --</option>${dueSOptions}
-        </select>
-        <div class="field-error" id="rf-err-due-status"></div>
-      </div>
-
-      <div class="form-group" id="rf-due-date-group">
-        <label class="form-label" for="rf-due-date">
-          Due Date <span class="required">*</span>
-          <span class="text-muted" style="text-transform:none;font-weight:400;">(wajib jika dikonfirmasi)</span>
-        </label>
-        <input type="text" id="rf-due-date" class="form-input" placeholder="Misal: 2026-12-31" />
+        <label class="form-label" for="rf-due-date">Due Date <span class="text-muted" style="text-transform:none;font-weight:400;">(opsional)</span></label>
+        <input type="date" id="rf-due-date" class="form-input" />
         <div class="field-error" id="rf-err-due-date"></div>
+        <div class="text-muted" style="font-size:0.85em;">Status (Normal / Upcoming / Due Soon / Expired) dihitung otomatis.</div>
       </div>
 
     </div>
@@ -376,17 +308,42 @@ function _bindEvents(container) {
     });
   }
 
-  // Removal Status change — toggle removal detail fields
-  const removalSel = container.querySelector("#rf-removal");
-  if (removalSel) {
-    removalSel.addEventListener("change", () => _toggleRemovalDetail(container));
+  // Area change — repopulate PLC dropdown
+  const areaSel = container.querySelector("#rf-area");
+  if (areaSel) {
+    areaSel.addEventListener("change", () => _populatePlcOptions(container));
   }
 
-  // Due Date Status change — toggle due date input
-  const dueStatusSel = container.querySelector("#rf-due-status");
-  if (dueStatusSel) {
-    dueStatusSel.addEventListener("change", () => _toggleDueDateInput(container));
+  // ID input — hanya boleh angka
+  const idInput = container.querySelector("#rf-id");
+  if (idInput) {
+    idInput.addEventListener("input", () => {
+      idInput.value = idInput.value.replace(/\D/g, "").slice(0, 3);
+    });
   }
+}
+
+// ---------------------------------------------------------------------------
+// PLC DROPDOWN (tergantung Area)
+// ---------------------------------------------------------------------------
+
+function _populatePlcOptions(container, selectedPlc = null) {
+  const areaSel = container.querySelector("#rf-area");
+  const plcSel  = container.querySelector("#rf-plc");
+  if (!plcSel) return;
+
+  const areaId = areaSel?.value;
+  if (!areaId || !PLC_BY_AREA[areaId]) {
+    plcSel.innerHTML = `<option value="">-- Pilih Area dahulu --</option>`;
+    plcSel.disabled = true;
+    return;
+  }
+
+  const options = PLC_BY_AREA[areaId]
+    .map((p) => `<option value="${_esc(p)}"${p === selectedPlc ? " selected" : ""}>${_esc(p)}</option>`)
+    .join("");
+  plcSel.innerHTML = `<option value="">-- Pilih PLC --</option>${options}`;
+  plcSel.disabled = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,24 +361,25 @@ function _openModal(container, jumperId) {
     if (!record) return;
     title.textContent = `Edit Jumper: ${jumperId}`;
     _populateModal(container, record);
-    // Lock Jumper ID saat edit
+    // Lock ID saat edit
     const idInput = container.querySelector("#rf-id");
     if (idInput) { idInput.value = record.jumperId; idInput.disabled = true; }
   } else {
-    // Add mode
+    // Add mode — auto-suggest ID berikutnya
     title.textContent = "Tambah Jumper";
     _clearModal(container);
     const idInput = container.querySelector("#rf-id");
-    if (idInput) idInput.disabled = false;
+    if (idInput) {
+      idInput.value = nextJumperId(getJumperRegister());
+      idInput.disabled = false;
+    }
   }
 
   _clearModalErrors(container);
-  _toggleRemovalDetail(container);
-  _toggleDueDateInput(container);
   if (backdrop) backdrop.style.display = "";
 
   // Focus pertama
-  setTimeout(() => container.querySelector("#rf-id")?.focus(), 50);
+  setTimeout(() => container.querySelector("#rf-area")?.focus(), 50);
 }
 
 function _closeModal(container) {
@@ -435,51 +393,28 @@ function _closeModal(container) {
 // ---------------------------------------------------------------------------
 
 function _populateModal(container, record) {
-  _setField(container, "#rf-id",            record.jumperId          ?? "");
-  _setField(container, "#rf-plc",           record.plc               ?? "");
-  _setField(container, "#rf-area",          record.areaId            ?? "");
-  _setField(container, "#rf-category",      record.category          ?? "");
-  _setField(container, "#rf-description",   record.description       ?? "");
-  _setField(container, "#rf-equipment",     record.equipmentTag      ?? "");
-  _setField(container, "#rf-installed",     record.installedWeekOrDate ?? "");
-  _setField(container, "#rf-id-year",       record.identificationYear !== null ? record.identificationYear : "");
-  _setField(container, "#rf-auth",          record.authorizationStatus ?? "");
-  _setField(container, "#rf-moc",           record.mocStatus          ?? "");
-  _setField(container, "#rf-removal",       record.removalStatus      ?? "");
-  _setField(container, "#rf-removal-week",  record.removalWeek        ?? "");
-  _setField(container, "#rf-removal-year",  record.removalYear !== null ? record.removalYear : "");
-  _setField(container, "#rf-due-status",    record.dueDateStatus      ?? "");
-  _setField(container, "#rf-due-date",      record.dueDate            ?? "");
-  _setField(container, "#rf-qty",           record.quantity           ?? 1);
+  _setField(container, "#rf-id",          record.jumperId     ?? "");
+  _setField(container, "#rf-area",        record.areaId       ?? "");
+  // PLC dropdown harus diisi dulu sesuai area sebelum nilai dipilih
+  _populatePlcOptions(container, record.plc ?? null);
+  _setField(container, "#rf-category",    record.category     ?? "");
+  _setField(container, "#rf-description", record.description  ?? "");
+  _setField(container, "#rf-equipment",   record.equipmentTag ?? "");
+  _setField(container, "#rf-installed",   record.installedDate ?? "");
+  _setField(container, "#rf-due-date",    record.dueDate      ?? "");
 }
 
 function _clearModal(container) {
-  const fields = ["#rf-id","#rf-plc","#rf-area","#rf-category","#rf-description",
-    "#rf-equipment","#rf-installed","#rf-id-year","#rf-auth","#rf-moc","#rf-removal",
-    "#rf-removal-week","#rf-removal-year","#rf-due-status","#rf-due-date"];
+  const fields = ["#rf-id","#rf-area","#rf-plc","#rf-category","#rf-description",
+    "#rf-equipment","#rf-installed","#rf-due-date"];
   fields.forEach((sel) => _setField(container, sel, ""));
-  _setField(container, "#rf-qty", "1");
+  // PLC dikosongkan dan dinonaktifkan sampai area dipilih
+  _populatePlcOptions(container, null);
 }
 
 function _setField(container, selector, value) {
   const el = container.querySelector(selector);
   if (el) el.value = value;
-}
-
-// ---------------------------------------------------------------------------
-// TOGGLE CONDITIONAL FIELDS
-// ---------------------------------------------------------------------------
-
-function _toggleRemovalDetail(container) {
-  const remVal    = container.querySelector("#rf-removal")?.value;
-  const detailDiv = container.querySelector("#rf-removal-detail");
-  if (detailDiv) detailDiv.style.display = remVal === REMOVAL_STATUS.YES ? "" : "none";
-}
-
-function _toggleDueDateInput(container) {
-  const statusVal = container.querySelector("#rf-due-status")?.value;
-  const dateGroup = container.querySelector("#rf-due-date-group");
-  if (dateGroup) dateGroup.style.display = statusVal === DUE_DATE_STATUS.CONFIRMED ? "" : "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -490,34 +425,15 @@ function _saveRecord(container) {
   const idEl = container.querySelector("#rf-id");
   const jumperId = _editingId || (idEl ? idEl.value.trim() : "");
 
-  const removalStatus = container.querySelector("#rf-removal")?.value || null;
-  const dueDateStatus = container.querySelector("#rf-due-status")?.value || null;
-  const idYearRaw     = container.querySelector("#rf-id-year")?.value.trim();
-  const remYearRaw    = container.querySelector("#rf-removal-year")?.value.trim();
-  const qtyRaw        = container.querySelector("#rf-qty")?.value.trim();
-
   const record = createJumperRecord({
     jumperId,
-    plc:                 container.querySelector("#rf-plc")?.value.trim()          || null,
-    areaId:              container.querySelector("#rf-area")?.value                || null,
-    category:            container.querySelector("#rf-category")?.value            || null,
-    description:         container.querySelector("#rf-description")?.value.trim() || null,
-    equipmentTag:        container.querySelector("#rf-equipment")?.value.trim()   || null,
-    installedWeekOrDate: container.querySelector("#rf-installed")?.value.trim()   || null,
-    authorizationStatus: container.querySelector("#rf-auth")?.value               || null,
-    mocStatus:           container.querySelector("#rf-moc")?.value                || null,
-    identificationYear:  idYearRaw ? parseInt(idYearRaw, 10) : null,
-    removalStatus,
-    removalWeek:         removalStatus === REMOVAL_STATUS.YES
-                           ? (container.querySelector("#rf-removal-week")?.value.trim() || null)
-                           : null,
-    removalYear:         removalStatus === REMOVAL_STATUS.YES && remYearRaw
-                           ? parseInt(remYearRaw, 10) : null,
-    dueDateStatus,
-    dueDate:             dueDateStatus === DUE_DATE_STATUS.CONFIRMED
-                           ? (container.querySelector("#rf-due-date")?.value.trim() || null)
-                           : null,
-    quantity:            qtyRaw ? parseInt(qtyRaw, 10) : 1,
+    plc:           container.querySelector("#rf-plc")?.value            || null,
+    areaId:        container.querySelector("#rf-area")?.value           || null,
+    category:      container.querySelector("#rf-category")?.value       || null,
+    description:   container.querySelector("#rf-description")?.value.trim() || null,
+    equipmentTag:  container.querySelector("#rf-equipment")?.value.trim()   || null,
+    installedDate: container.querySelector("#rf-installed")?.value      || null,
+    dueDate:       container.querySelector("#rf-due-date")?.value       || null,
   });
 
   // Validasi — untuk edit, exclude jumperId dari set existing (akan di-replace)
@@ -585,11 +501,6 @@ function _clearModalErrors(container) {
 // ---------------------------------------------------------------------------
 // HELPERS
 // ---------------------------------------------------------------------------
-
-function _clearModalAll(container) {
-  _clearModal(container);
-  _clearModalErrors(container);
-}
 
 function _esc(str) {
   return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");

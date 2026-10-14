@@ -144,7 +144,7 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
     afterDatasetsDraw(chart) {
       const { ctx } = chart;
       ctx.save();
-      ctx.font = "bold 8.5px sans-serif";
+      ctx.font = "bold 9px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
@@ -193,8 +193,8 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
           let y = lineElem.y;
 
           // Jika nilai Actual sama dengan Plan, letakkan kotak Actual sedikit di atas atau di posisi target
-          const boxW = 13;
-          const boxH = 11;
+          const boxW = 14;
+          const boxH = 12;
 
           ctx.fillStyle = ACTUAL_COLOR;
           ctx.fillRect(x - boxW / 2, y - boxH / 2, boxW, boxH);
@@ -224,8 +224,8 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
           backgroundColor: catTheme.planBg,
           borderColor:     catTheme.planBorder,
           borderWidth:     1,
-          barPercentage:   0.6,
-          categoryPercentage: 0.8,
+          barPercentage:   0.65,
+          categoryPercentage: 0.85,
           order:           2,
         },
         {
@@ -236,11 +236,11 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
           backgroundColor: ACTUAL_COLOR,
           pointBackgroundColor: ACTUAL_COLOR,
           pointBorderColor:     "#ffffff",
-          pointBorderWidth:     1,
+          pointBorderWidth:     1.5,
           pointStyle:      "rect",
           borderWidth:     2,
           pointRadius:     6,
-          pointHoverRadius:7,
+          pointHoverRadius:8,
           spanGaps:        false, // data null tidak disambung
           tension:         0.1,
           fill:            false,
@@ -253,17 +253,17 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
       maintainAspectRatio: false,
       animation:           { duration: 200 },
       layout: {
-        padding: { top: 12, bottom: 4, left: 4, right: 4 },
+        padding: { top: 16, bottom: 8, left: 8, right: 8 },
       },
       plugins: {
         legend: {
           display:  true,
           position: "top",
           labels:   {
-            boxWidth: 12,
-            boxHeight: 8,
-            font: { size: 9 },
-            padding: 5,
+            boxWidth: 14,
+            boxHeight: 10,
+            font: { size: 10 },
+            padding: 6,
             generateLabels: (chart) => {
               return [
                 {
@@ -299,13 +299,13 @@ function _renderOneChart(canvas, canvasId, series, ChartJS) {
       },
       scales: {
         x: {
-          ticks: { font: { size: 8 }, maxRotation: 0 },
+          ticks: { font: { size: 9 }, maxRotation: 0 },
           grid:  { color: "rgba(0,0,0,0.05)" },
         },
         y: {
           beginAtZero: true,
-          grace:       "15%", // beri ruang vertikal agar label tidak terpotong
-          ticks:       { font: { size: 8 }, precision: 0 },
+          grace:       "18%", // beri ruang vertikal agar label tidak terpotong
+          ticks:       { font: { size: 9 }, precision: 0 },
           grid:        { color: "rgba(0,0,0,0.08)" },
         },
       },

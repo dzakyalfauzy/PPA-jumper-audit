@@ -31,14 +31,13 @@
 
 "use strict";
 
-import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST } from "../model/constants.js";
+import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STATUS_COLORS, DUE_SOON_MAX_DAYS, UPCOMING_MAX_DAYS } from "../model/constants.js";
 import {
   remainingJumperList,
-  authorizedMocCount,
-  removedJumperCount,
   remainingPlcRatio,
   jumperCountPerPlc,
   calculateAreaSummariesFromWeeklyChart,
+  getJumperStatus,
 } from "../logic/selectors.js";
 import { getAllChartSeries, checkChartDataCompleteness } from "../logic/chartData.js";
 import { renderAllCharts, destroyAllCharts, canvasId, CATEGORY_COLORS } from "./chartRenderer.js";
@@ -114,10 +113,6 @@ function _computeAll(state) {
   const weekLabels = config.weekLabels || [];
 
   const remainingResult  = remainingJumperList(jumperRegister, appConfig);
-  const authorizedResult = authorizedMocCount(jumperRegister);
-  const removedResult    = reportingWeekLabel
-    ? removedJumperCount(jumperRegister, config.reportingYear, reportingWeekLabel)
-    : { count: 0, records: [] };
   const plcRatioResult   = remainingPlcRatio(jumperRegister, config.totalPlcInScope);
   const jumperPerPlc     = jumperCountPerPlc(jumperRegister);
 
@@ -134,8 +129,6 @@ function _computeAll(state) {
   return {
     appConfig,
     remainingResult,
-    authorizedResult,
-    removedResult,
     plcRatioResult,
     jumperPerPlc,
     chartCompleteness,
@@ -151,7 +144,7 @@ function _computeAll(state) {
 function _buildSlideHTML(state, computed) {
   const { config, areaSummary, jumperRegister } = state;
   const {
-    remainingResult, authorizedResult, removedResult,
+    remainingResult,
     plcRatioResult, jumperPerPlc, chartCompleteness, reportingWeekLabel,
   } = computed;
 
@@ -234,27 +227,8 @@ function _buildSlideHTML(state, computed) {
             }).join("")}
           </div>
 
-          <!-- Bottom-left: Authorized/MoC KPI + Jumper Update Table -->
+          <!-- Bottom-left: Jumper Update Table (kartu ringkasan status dihapus) -->
           <div class="slide-bottom-left">
-
-            <div class="slide-kpi-row">
-              <div class="slide-kpi-box">
-                <div class="slide-kpi-box__label">Total Jumper with Authorized/MoC</div>
-                <div class="slide-kpi-box__value">
-                  ${authorizedResult.count}
-                </div>
-                <div class="slide-kpi-box__note oq-note">[OQ-02, OQ-03] Placeholder</div>
-              </div>
-              <div class="slide-kpi-box">
-                <div class="slide-kpi-box__label">
-                  Total Removed (${reportingWeekLabel ? _esc(reportingWeekLabel) : "—"}, ${_esc(String(year))})
-                </div>
-                <div class="slide-kpi-box__value">
-                  ${removedResult.count}
-                </div>
-                ${!reportingWeekLabel ? '<div class="slide-kpi-box__note oq-note">Label minggu laporan belum tersedia</div>' : ""}
-              </div>
-            </div>
 
             <!-- Jumper Update Table -->
             <div class="slide-update-table-wrap">
@@ -274,7 +248,7 @@ function _buildSlideHTML(state, computed) {
             <div class="slide-section-title">
               Remaining Jumper List
               ${!remainingResult.ok
-                ? '<span class="oq-note">[OQ-01]</span>'
+                ? '<span class="oq-note">[tidak tersedia]</span>'
                 : `<span class="slide-count-badge">${remainingResult.data.length}</span>`
               }
             </div>
@@ -316,7 +290,7 @@ function _buildWarningsBanner(computed, overflowWarning) {
   const warnings = [];
 
   if (!computed.remainingResult.ok) {
-    warnings.push(`<li><strong>OQ-01:</strong> ${_esc(computed.remainingResult.reason)}</li>`);
+    warnings.push(`<li><strong>Remaining Jumper List:</strong> ${_esc(computed.remainingResult.reason)}</li>`);
   }
   if (!computed.chartCompleteness.complete) {
     const n = computed.chartCompleteness.incompleteCells.length;
@@ -358,7 +332,7 @@ function _buildRemainingList(remainingResult, maxRows) {
       `).join("")}
     </div>
     <div class="slide-remaining-criteria">
-      Criteria: Removal=No · MOC=Not Available · ID Year filter [OQ-01]
+      Criteria: field dasar (Removal, MOC, ID Year) dihapus dari register — dasar BR-03 perlu dikonfirmasi ulang.
     </div>
   `;
 }
@@ -380,29 +354,30 @@ function _buildPlcRatio(plcRatioResult) {
 }
 
 function _buildUpdateTable(jumperRegister) {
-  // Kolom: PLC | Update Jumper (description) | Installed | Authorized Jumper | Due Date
-  // Sumber: jumperRegister (semua record, termasuk removed, untuk riwayat)
+  // Kolom: ID | PLC | Area | Category | Installed | Due Date | Status
+  // Status dihitung dari Due Date (bukan input pengguna).
   if (jumperRegister.length === 0) {
     return `<div class="slide-empty-section">Tidak ada data register.</div>`;
   }
 
   const rows = jumperRegister.map((r) => {
-    const dueDateDisplay = r.dueDateStatus === "confirmed" && r.dueDate
-      ? _esc(r.dueDate)
-      : '<span class="slide-empty">Perlu konfirmasi</span>';
-
-    // "Authorized Jumper" = apakah record memenuhi BR-04 (Auth=Authorized AND MOC=Approved/Complete)
-    // Catatan: ini hanya display — tidak mengklaim sebagai final (OQ-02, OQ-03)
-    const isAuth = r.authorizationStatus === "Authorized" && r.mocStatus === "Approved/Complete";
-    const authDisplay = isAuth ? "✓" : "—";
+    const status = getJumperStatus(r.dueDate);
+    const statusDisplay = status
+      ? (() => {
+          const c = STATUS_COLORS[status];
+          return `<span style="background:${c.bg};color:${c.text};padding:1px 8px;border-radius:8px;font-weight:600;white-space:nowrap;">${_esc(status)}</span>`;
+        })()
+      : '<span class="slide-empty">—</span>';
 
     return `
       <tr>
+        <td class="ut-id"><strong>${_esc(r.jumperId)}</strong></td>
         <td class="ut-plc">${_esc(r.plc)}</td>
-        <td class="ut-desc">${_esc(r.description || "")}</td>
-        <td class="ut-installed">${_esc(r.installedWeekOrDate || "")}</td>
-        <td class="ut-auth" style="text-align:center;">${authDisplay}</td>
-        <td class="ut-due">${dueDateDisplay}</td>
+        <td class="ut-area">${_esc(AREA_LABELS[r.areaId] || r.areaId || "")}</td>
+        <td class="ut-cat">${_esc(r.category || "")}</td>
+        <td class="ut-installed">${_esc(r.installedDate || "")}</td>
+        <td class="ut-due">${_esc(r.dueDate || "")}</td>
+        <td class="ut-status" style="text-align:center;">${statusDisplay}</td>
       </tr>
     `;
   }).join("");
@@ -412,18 +387,20 @@ function _buildUpdateTable(jumperRegister) {
       <table class="slide-update-table">
         <thead>
           <tr>
+            <th>ID</th>
             <th>PLC</th>
-            <th>Update Jumper</th>
+            <th>Area</th>
+            <th>Category</th>
             <th>Installed</th>
-            <th>Authorized<br/>Jumper</th>
             <th>Due Date</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
     <div class="oq-note" style="font-size:0.68rem;margin-top:2px;">
-      [OQ-02, OQ-03] Kolom "Authorized Jumper" menggunakan placeholder enum — belum final.
+      Status dihitung otomatis dari Due Date: Normal (&gt; ${UPCOMING_MAX_DAYS} hari) · Upcoming (${DUE_SOON_MAX_DAYS + 1}–${UPCOMING_MAX_DAYS} hari) · Due Soon (0–${DUE_SOON_MAX_DAYS} hari) · Expired (lewat).
     </div>
   `;
 }

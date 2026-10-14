@@ -291,9 +291,14 @@ describe("Integrasi kalkulasi preview (tanpa DOM)", () => {
     expect(container.innerHTML).toContain("Period: W40");
     expect(container.innerHTML).not.toContain("Period: W52");
 
-    // Total Removed pada KPI harus mencerminkan W40 (yaitu 2), BUKAN W52 (yaitu 7)
-    expect(container.innerHTML).toContain("Total Removed (W40, 2026)");
-    expect(container.innerHTML).toContain('<div class="slide-kpi-box__value">\n                  2\n                </div>');
+    // Kartu ringkasan status (Normal/Due Soon/Expired) DIHAPUS dari slide.
+    // Kata "Normal"/"Due Soon"/"Expired" hanya boleh muncul di legenda teks & kolom Status.
+    expect(container.innerHTML).not.toContain("slide-kpi-row");
+    expect(container.innerHTML).not.toContain("slide-kpi-box");
+    expect(container.innerHTML).toContain("Jumper Update Table");
+    // Legenda aturan status 4-tier tetap tampil
+    expect(container.innerHTML).toContain("Upcoming");
+    expect(container.innerHTML).toContain("Due Soon (0–7 hari)");
   });
 
   // ── PLC Ratio ──

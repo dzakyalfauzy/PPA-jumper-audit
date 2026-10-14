@@ -29,6 +29,9 @@
 "use strict";
 
 import {
+  JUMPER_STATUS,
+  DUE_SOON_MAX_DAYS,
+  UPCOMING_MAX_DAYS,
   REMOVAL_STATUS,
   AUTH_STATUS_QUALIFYING,
   MOC_STATUS_QUALIFYING,
@@ -39,17 +42,100 @@ import {
 import { APP_CONFIG } from "../model/config.js";
 
 // ---------------------------------------------------------------------------
+// DERIVED JUMPER STATUS (dari Due Date)
+// ---------------------------------------------------------------------------
+// Status TIDAK disimpan di state — selalu dihitung ulang dari dueDate + today.
+// Threshold terpusat di DUE_SOON_MAX_DAYS / UPCOMING_MAX_DAYS (constants.js).
+// Valid: jika dueDate null / format tidak valid → BUKAN Normal (null).
+
+/** Parse string YYYY-MM-DD menjadi Date (lokal, tanpa timezone shift), atau null. */
+function parseIsoDate(value) {
+  if (typeof value !== "string") return null;
+  const m = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const date = new Date(y, mo - 1, d);
+  // Verifikasi tidak ada overflow (mis. 2026-02-31)
+  if (
+    date.getFullYear() !== y ||
+    date.getMonth() !== mo - 1 ||
+    date.getDate() !== d
+  ) {
+    return null;
+  }
+  return date;
+}
+
+/** Hitung selisih hari kalender (bukan timestamp) target - today. */
+function calendarDayDiff(target, today) {
+  const a = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  const b = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((a - b) / 86400000);
+}
+
+/**
+ * Menentukan status jumper dari Due Date.
+ *
+ * Aturan (selisih hari kalender = Due Date - hari ini):
+ *   - diff < 0                                → "Expired"
+ *   - 0..DUE_SOON_MAX_DAYS (0–7)              → "Due Soon" (termasuk Due Date hari ini)
+ *   - (DUE_SOON_MAX_DAYS+1)..UPCOMING_MAX_DAYS (8–30) → "Upcoming"
+ *   - > UPCOMING_MAX_DAYS (> 30)              → "Normal"
+ *   - dueDate null / tidak valid              → null (BUKAN Normal — data belum lengkap)
+ *
+ * Perbandingan memakai tanggal kalender, bukan timestamp (hindari selisih timezone).
+ *
+ * @param {string|null} dueDate — "YYYY-MM-DD"
+ * @param {Date} [today] — injection untuk test deterministik
+ * @returns {string|null} JUMPER_STATUS value atau null
+ */
+export function getJumperStatus(dueDate, today = new Date()) {
+  const due = parseIsoDate(dueDate);
+  if (!due) return null;
+
+  const diff = calendarDayDiff(due, today);
+
+  if (diff < 0) return JUMPER_STATUS.EXPIRED;
+  if (diff <= DUE_SOON_MAX_DAYS) return JUMPER_STATUS.DUE_SOON;
+  if (diff <= UPCOMING_MAX_DAYS) return JUMPER_STATUS.UPCOMING;
+  return JUMPER_STATUS.NORMAL;
+}
+
+/**
+ * Menghitung distribusi status seluruh register.
+ * Record tanpa Due Date valid dihitung dalam `noDate`, bukan sebagai Normal.
+ *
+ * @param {object[]} jumperRegister
+ * @param {Date} [today]
+ * @returns {{ normal: number, upcoming: number, dueSoon: number, expired: number, noDate: number, total: number }}
+ */
+export function jumperStatusCounts(jumperRegister, today = new Date()) {
+  const counts = { normal: 0, upcoming: 0, dueSoon: 0, expired: 0, noDate: 0, total: jumperRegister.length };
+  for (const r of jumperRegister) {
+    const s = getJumperStatus(r.dueDate, today);
+    if (s === JUMPER_STATUS.NORMAL) counts.normal++;
+    else if (s === JUMPER_STATUS.UPCOMING) counts.upcoming++;
+    else if (s === JUMPER_STATUS.DUE_SOON) counts.dueSoon++;
+    else if (s === JUMPER_STATUS.EXPIRED) counts.expired++;
+    else counts.noDate++;
+  }
+  return counts;
+}
+
+// ---------------------------------------------------------------------------
 // HELPER INTERNAL
 // ---------------------------------------------------------------------------
 
 /**
  * Mengembalikan true jika record adalah jumper aktif.
- * [OQ-06] Asumsi sementara: aktif = Removal Status = No.
- * Jika aturan aktif berubah, hanya fungsi ini yang perlu diperbarui.
+ * Schema baru tidak punya field removalStatus — semua record baru = aktif.
+ * Record legacy (punya removalStatus) tetap mengikuti aturan lama.
  * @param {object} record
  * @returns {boolean}
  */
 function isActiveJumper(record) {
+  if (record.removalStatus === undefined) return true;
   return record.removalStatus === REMOVAL_STATUS.NO;
 }
 
@@ -105,7 +191,23 @@ function isRemovedInPeriod(record, reportingYear, reportingWeekLabel) {
  * @returns {{ ok: boolean, reason?: string, data: object[] }}
  */
 export function remainingJumperList(jumperRegister, appConfig = APP_CONFIG) {
-  const yearFilter = appConfig.reporting.identificationYearFilter;
+  const yearFilter = appConfig.reporting?.identificationYearFilter;
+
+  // Schema baru (revision Jumper Register): field removalStatus/mocStatus/
+  // identificationYear tidak lagi ada. Jangan hitung — laporkan ambigu.
+  const hasLegacyFields = jumperRegister.some(
+    (r) => r.removalStatus !== undefined || r.mocStatus !== undefined
+  );
+  if (jumperRegister.length > 0 && !hasLegacyFields) {
+    return {
+      ok: false,
+      reason:
+        "Field Removal Status, MOC Status, dan Identification Year dihapus dari " +
+        "register (revisi form). Dasar filter Remaining Jumper List (BR-03) tidak " +
+        "lagi tersedia — definisi pengganti perlu dikonfirmasi pemilik proses.",
+      data: [],
+    };
+  }
 
   if (yearFilter === null || yearFilter === undefined) {
     return {
@@ -147,13 +249,28 @@ export function remainingJumperList(jumperRegister, appConfig = APP_CONFIG) {
  * @returns {{ count: number, records: object[], placeholderWarning: string }}
  */
 export function authorizedMocCount(jumperRegister) {
+  const hasLegacyFields = jumperRegister.some(
+    (r) => r.authorizationStatus !== undefined || r.mocStatus !== undefined
+  );
+
+  if (!hasLegacyFields && jumperRegister.length > 0) {
+    return {
+      count: 0,
+      records: [],
+      placeholderWarning:
+        "Field Authorization Status dan MOC Status dihapus dari register (revisi " +
+        "form). KPI Authorized/MoC tidak dapat dihitung — definisi KPI pengganti " +
+        "perlu dikonfirmasi pemilik proses sebelum ditampilkan dalam laporan.",
+    };
+  }
+
   const records = jumperRegister.filter(
     (r) =>
       AUTH_STATUS_QUALIFYING.includes(r.authorizationStatus) &&
       MOC_STATUS_QUALIFYING.includes(r.mocStatus)
   );
 
-  const count = records.reduce((sum, r) => sum + (r.quantity ?? 0), 0);
+  const count = records.reduce((sum, r) => sum + (r.quantity ?? 1), 0);
 
   return {
     count,
@@ -191,7 +308,7 @@ export function removedJumperCount(jumperRegister, reportingYear, reportingWeekL
     isRemovedInPeriod(r, reportingYear, reportingWeekLabel)
   );
 
-  const count = records.reduce((sum, r) => sum + (r.quantity ?? 0), 0);
+  const count = records.reduce((sum, r) => sum + (r.quantity ?? 1), 0);
   return { count, records };
 }
 
@@ -275,7 +392,7 @@ export function jumperCountPerPlc(jumperRegister) {
     const cat = record.category;
     if (!cat) continue;
 
-    catMap[cat] = (catMap[cat] ?? 0) + (record.quantity ?? 0);
+    catMap[cat] = (catMap[cat] ?? 0) + (record.quantity ?? 1);
   }
 
   // Konversi ke array yang terstruktur
@@ -327,7 +444,7 @@ export function areaSummaryDiscrepancy(areaSummary, jumperRegister, appConfig = 
   for (const areaId of AREA_ID_LIST) {
     computedByArea[areaId] = jumperRegister
       .filter((r) => r.areaId === areaId && isActiveJumper(r))
-      .reduce((sum, r) => sum + (r.quantity ?? 0), 0);
+      .reduce((sum, r) => sum + (r.quantity ?? 1), 0);
   }
 
   const warnings = areaSummary.map(({ areaId, jumperCount }) => {
@@ -436,7 +553,7 @@ export function activeJumperQuantityByArea(jumperRegister) {
   for (const areaId of AREA_ID_LIST) {
     result[areaId] = jumperRegister
       .filter((r) => r.areaId === areaId && isActiveJumper(r))
-      .reduce((sum, r) => sum + (r.quantity ?? 0), 0);
+      .reduce((sum, r) => sum + (r.quantity ?? 1), 0);
   }
   return result;
 }

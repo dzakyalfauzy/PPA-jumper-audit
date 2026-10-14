@@ -1,0 +1,542 @@
+/**
+ * pptxExporter.js
+ * Generator PowerPoint (PPTX) 16:9 satu slide yang proporsional dan fit 100% di kanvas.
+ *
+ * Dimensi Kanvas 16:9 Widescreen Resmi: 13.333" x 7.500"
+ * Batas Konten Ketat:
+ *   - Margin Slide: Kiri/Kanan/Bawah = 0.22"
+ *   - Lebar Konten Aktif: 13.333 - 2 * 0.22 = 12.893"
+ *   - Kolom Utama (Kiri): Lebar 8.60" (0.22" s.d. 8.82")
+ *   - Kolom Pendukung (Kanan): Lebar 4.07" (9.04" s.d. 13.11")
+ *   - Jarak antar Kolom Utama & Kanan: 0.22"
+ *
+ * Verifikasi Batas Vertikal (Layout Diperbaiki):
+ *   - Header: y = 0.00, h = 0.50
+ *   - Baris 1: Area Summary Cards (y = 0.56, h = 0.48) -> y = 1.04
+ *   - Baris 2: 12 Combo Charts (y = 1.10, h = 4.00) -> y = 5.10
+ *   - Baris 3: Jumper Update Table (y = 5.10, h = 2.14) -> y = 7.24 <= 7.28" (Aman!)
+ *     (kartu status Normal/Upcoming/Due Soon/Expired dihapus dari slide)
+ *
+ *   - Kanan Atas: Remaining List (y = 0.56, h = 2.65) -> y = 3.21
+ *   - Kanan Tengah: PLC Ratio (y = 3.28, h = 0.88) -> y = 4.16
+ *   - Kanan Bawah: Count per PLC Chart (y = 4.24, h = 3.00) -> y = 7.24 <= 7.28" (Aman!)
+ */
+
+"use strict";
+
+import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STATUS_COLORS } from "../model/constants.js";
+import {
+  remainingJumperList,
+  remainingPlcRatio,
+  jumperCountPerPlc,
+  calculateAreaSummariesFromWeeklyChart,
+  getJumperStatus,
+} from "../logic/selectors.js";
+import { getAllChartSeries, getChartKey } from "../logic/chartData.js";
+import { CATEGORY_COLORS, ACTUAL_COLOR } from "../preview/chartRenderer.js";
+import { validateFullState } from "../model/validation.js";
+
+// Layout Widescreen 16:9
+export const SLIDE_W = 13.333;
+export const SLIDE_H = 7.500;
+export const MARGIN = 0.22;
+
+/**
+ * Filter label minggu agar ringkas dan hanya menampilkan rentang minggu laporan relevan (cth 5-8 minggu)
+ */
+export function getOptimizedWeekLabels(configuredLabels, reportingWeek) {
+  if (!Array.isArray(configuredLabels) || configuredLabels.length === 0) {
+    return reportingWeek ? [`W${reportingWeek}`] : ["W40"];
+  }
+
+  if (configuredLabels.length <= 8) {
+    return configuredLabels;
+  }
+
+  const targetNum = parseInt(String(reportingWeek || "40").replace(/\D/g, ""), 10) || 40;
+  const targetLabel = `W${targetNum}`;
+  const idx = configuredLabels.findIndex((l) => l.toUpperCase() === targetLabel.toUpperCase());
+
+  if (idx !== -1) {
+    const start = Math.max(0, idx - 3);
+    const end = Math.min(configuredLabels.length, start + 6);
+    return configuredLabels.slice(start, end);
+  }
+
+  return configuredLabels.slice(-6);
+}
+
+/**
+ * Generate dan unduh presentasi PPTX satu slide yang editable.
+ * @param {object} state - state aplikasi (getState())
+ * @param {object} [PptxGenJSLib] - Library PptxGenJS
+ * @returns {Promise<{ success: boolean, filename?: string, error?: string }>}
+ */
+export async function exportToPowerPoint(state, PptxGenJSLib = null) {
+  const validation = validateFullState(state);
+  if (validation.errors.length > 0) {
+    throw new Error(`Ekspor diblokir karena terdapat ${validation.errors.length} error validasi: ${validation.errors[0]}`);
+  }
+
+  let PptxGenClass = PptxGenJSLib;
+  if (!PptxGenClass) {
+    if (typeof window !== "undefined" && window.PptxGenJS) {
+      PptxGenClass = window.PptxGenJS;
+    } else {
+      const module = await import("pptxgenjs");
+      PptxGenClass = module.default || module;
+    }
+  }
+
+  const pptx = new PptxGenClass();
+  pptx.defineLayout({ name: "WIDESCREEN_16_9", width: 13.333, height: 7.500 });
+  pptx.layout = "WIDESCREEN_16_9";
+  pptx.author = "PPA Automation";
+  pptx.company = "PPA Process Plant Area";
+  pptx.title = state.config.title || "PPA Jumper Audit";
+
+  const slide = pptx.addSlide();
+  slide.background = { color: "F8FAFC" };
+
+  const config = state.config;
+  const reportingYear = config.reportingYear;
+  const reportingWeek = config.reportingWeek;
+  const reportingWeekLabel = reportingWeek != null ? `W${reportingWeek}` : "—";
+  const displayWeekLabels = getOptimizedWeekLabels(config.weekLabels, reportingWeek);
+
+  const appConfig = {
+    reporting: { identificationYearFilter: config.identificationYearFilter ?? null },
+    discrepancyWarning: { enabled: true, basis: null },
+  };
+
+  const remainingResult = remainingJumperList(state.jumperRegister, appConfig);
+  const plcRatioResult = remainingPlcRatio(state.jumperRegister, config.totalPlcInScope);
+  const jumperPerPlc = jumperCountPerPlc(state.jumperRegister);
+  const calculatedSummaries = calculateAreaSummariesFromWeeklyChart(state.weeklyChartData, reportingWeek, reportingYear);
+  const allChartSeries = getAllChartSeries(state.weeklyChartData, displayWeekLabels);
+
+  // 1. Header
+  _buildHeader(slide, config, reportingWeekLabel);
+
+  // 2. Area Summary Cards
+  _buildAreaSummaryCards(slide, calculatedSummaries);
+
+  // 3. 12 Charts Grid
+  _build12Charts(slide, pptx, allChartSeries, calculatedSummaries, displayWeekLabels);
+
+  // 4. Bottom Left: Jumper Update Table (kartu status dihapus — tabel mengisi ruang)
+  _buildBottomLeft(slide, state.jumperRegister);
+
+  // 5. Right Column: Remaining List, PLC Ratio, & PLC Chart
+  _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperPerPlc);
+
+  // Export buffer & XML post-process
+  const safeTitle = (config.title || "PPA_Jumper_Audit").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filename = `${safeTitle}_${reportingWeekLabel}_${reportingYear || ""}.pptx`;
+
+  const rawData = await pptx.write({ outputType: "nodebuffer" }).catch(async () => {
+    return await pptx.write("nodebuffer").catch(async () => {
+      return await pptx.write({ outputType: "blob" });
+    });
+  });
+
+  let finalBuffer = rawData;
+  try {
+    let JSZipClass = null;
+    if (typeof window !== "undefined" && window.JSZip) {
+      JSZipClass = window.JSZip;
+    } else {
+      JSZipClass = (await import("jszip")).default;
+    }
+
+    if (JSZipClass) {
+      const zip = await JSZipClass.loadAsync(rawData);
+
+      const chartFiles = Object.keys(zip.files).filter((f) => f.match(/^ppt\/charts\/chart\d+\.xml$/));
+      for (const cf of chartFiles) {
+        let xml = await zip.file(cf).async("text");
+        xml = xml.replaceAll('<a:defRPr sz="1200"', '<a:defRPr sz="750"');
+        xml = xml.replace(/(<c:catAx>[\s\S]*?)<a:bodyPr\/>/, '$1<a:bodyPr rot="0" vert="horz"/>');
+        zip.file(cf, xml);
+      }
+
+      if (typeof window === "undefined") {
+        finalBuffer = await zip.generateAsync({ type: "nodebuffer" });
+        const fs = (await import("fs")).default;
+        fs.writeFileSync(filename, finalBuffer);
+      } else {
+        finalBuffer = await zip.generateAsync({
+          type: "blob",
+          mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        });
+        const blobUrl = window.URL.createObjectURL(finalBuffer);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
+      }
+    }
+  } catch (err) {
+    if (typeof pptx.writeFile === "function") {
+      await pptx.writeFile({ fileName: filename });
+    }
+  }
+
+  return { success: true, filename };
+}
+
+// ---------------------------------------------------------------------------
+// SECTION BUILDERS
+// ---------------------------------------------------------------------------
+
+function _buildHeader(slide, config, reportingWeekLabel) {
+  slide.addShape("rect", {
+    x: 0, y: 0, w: SLIDE_W, h: 0.50,
+    fill: { color: "1E3A8A" },
+    line: { color: "1E3A8A" }
+  });
+
+  slide.addText(config.title || "PPA JUMPER AUDIT", {
+    x: MARGIN, y: 0.05, w: 7.0, h: 0.40,
+    fontSize: 15, bold: true, color: "FFFFFF",
+    align: "left", valign: "middle"
+  });
+
+  const metaText = `${config.plantArea || "Process Plant Area"}  |  Week ${config.reportingWeek || "—"} · ${config.reportingYear || "—"}  |  Period: ${reportingWeekLabel} (${config.reportingYear || "—"})`;
+  slide.addText(metaText, {
+    x: 7.3, y: 0.05, w: 5.8, h: 0.40,
+    fontSize: 10, bold: false, color: "E2E8F0",
+    align: "right", valign: "middle"
+  });
+}
+
+function _buildAreaSummaryCards(slide, calculatedSummaries) {
+  const startX = MARGIN; // 0.22
+  const startY = 0.56;
+  const cardW = 2.08;
+  const cardH = 0.48;
+  const gap = 0.09;
+
+  AREA_ID_LIST.forEach((areaId, i) => {
+    const x = startX + i * (cardW + gap);
+    const summary = calculatedSummaries[areaId];
+    const val = summary && summary.totalActual !== null ? String(summary.totalActual) : "—";
+    const label = AREA_LABELS[areaId] || areaId;
+
+    slide.addShape("rect", {
+      x, y: startY, w: cardW, h: cardH,
+      fill: { color: "FFFFFF" },
+      line: { color: "CBD5E1", width: 1 }
+    });
+
+    slide.addText(label.toUpperCase(), {
+      x, y: startY + 0.03, w: cardW, h: 0.15,
+      fontSize: 8, bold: true, color: "1E3A8A",
+      align: "center", valign: "top"
+    });
+
+    slide.addText(`${val} jumpers`, {
+      x, y: startY + 0.17, w: cardW, h: 0.27,
+      fontSize: 11, bold: true, color: "0F172A",
+      align: "center", valign: "middle"
+    });
+  });
+}
+
+function _build12Charts(slide, pptx, allChartSeries, calculatedSummaries, displayWeekLabels) {
+  const colStartX = MARGIN; // 0.22
+  const colStartY = 1.10;
+  const colW = 2.08;
+  const colGap = 0.09;
+  const headerH = 0.22;
+  const chartH = 1.20;   // ditambah dari 1.00 agar chart area = 1.07"
+  const chartGap = 0.05; // gap antar baris chart sedikit diperlebar
+
+  AREA_ID_LIST.forEach((areaId, areaIdx) => {
+    const x = colStartX + areaIdx * (colW + colGap);
+    const summary = calculatedSummaries[areaId];
+    const totalJumpers = summary && summary.totalActual !== null ? ` (${summary.totalActual} jumpers)` : "";
+
+    // Area Column Header
+    slide.addShape("rect", {
+      x, y: colStartY, w: colW, h: headerH,
+      fill: { color: "1E3A8A" },
+      line: { color: "1E3A8A" }
+    });
+    slide.addText(`${AREA_LABELS[areaId]}${totalJumpers}`, {
+      x, y: colStartY, w: colW, h: headerH,
+      fontSize: 9, bold: true, color: "FFFFFF",
+      align: "center", valign: "middle"
+    });
+
+    // 3 Category Rows
+    CATEGORY_LIST.forEach((category, catIdx) => {
+      const y = colStartY + headerH + 0.03 + catIdx * (chartH + chartGap);
+      const key = getChartKey(areaId, category);
+      const series = allChartSeries.get(key);
+
+      const catColorHex = (CATEGORY_COLORS[category]?.base || "#0EA5E9").replace("#", "");
+      slide.addText(`●  ${category}`, {
+        x: x + 0.04, y: y, w: colW - 0.08, h: 0.15,
+        fontSize: 8.5, bold: true, color: catColorHex,
+        align: "left", valign: "middle"
+      });
+
+      const pData = (series?.planSeries || []).map((v) => (v === null || v === undefined ? 0 : v));
+      const aData = (series?.actualSeries || []).map((v) => (v === null || v === undefined ? 0 : v));
+      const labels = series?.labels && series.labels.length > 0 ? series.labels : displayWeekLabels;
+
+      const planColorHex = (CATEGORY_COLORS[category]?.base || "#BFBFBF").replace("#", "");
+      const actualColorHex = ACTUAL_COLOR.replace("#", "");
+
+      const chartDataTypes = [
+        {
+          type: pptx.ChartType.bar,
+          data: [{ name: "Plan", labels, values: pData }],
+          options: {
+            chartColors: [planColorHex],
+            dataLabelValue: true,
+            dataLabelFontColor: "1E293B",
+            dataLabelFontSize: 8,
+          }
+        },
+        {
+          type: pptx.ChartType.line,
+          data: [{ name: "Actual", labels, values: aData }],
+          options: {
+            chartColors: [actualColorHex],
+            dataLabelValue: true,
+            dataLabelFontColor: actualColorHex,
+            dataLabelFontSize: 8.5,
+            lineDataSymbol: "square",
+            lineDataSymbolSize: 6,
+            lineSize: 2.0
+          }
+        }
+      ];
+
+      try {
+        slide.addChart(chartDataTypes, null, {
+          x, y: y + 0.13, w: colW, h: chartH - 0.13,
+          showLegend: catIdx === 0,
+          legendPos: "t",
+          legendFontSize: 7.5,
+          showValAxisTitle: false,
+          showCatAxisTitle: false,
+          valAxisHidden: false,
+          catAxisHidden: false,
+          valAxisFontSize: 7.5,
+          catAxisFontSize: 7.5,
+          catAxisLabelPos: "low"
+        });
+      } catch (err) {
+        slide.addShape("rect", {
+          x, y: y + 0.13, w: colW, h: chartH - 0.13,
+          fill: { color: "F1F5F9" },
+          line: { color: "CBD5E1" }
+        });
+        slide.addText(`${category} Data`, {
+          x, y: y + 0.13, w: colW, h: chartH - 0.13,
+          fontSize: 9, color: "64748B", align: "center", valign: "middle"
+        });
+      }
+    });
+  });
+}
+
+function _buildBottomLeft(slide, jumperRegister) {
+  const startX = MARGIN; // 0.22
+  const startY = 5.10;   // langsung di bawah charts (y = 5.10) — chart grid dipertinggi
+  const totalW = 8.60; // 4 * 2.08 + 3 * 0.09 = 8.59 (~8.60)
+
+  // Jumper Update Table — mengisi ruang sisa di bawah chart grid
+  const tableY = startY;         // 5.10
+  const tableH = 2.14;           // 5.10 + 2.14 = 7.24 <= 7.28" (Aman!)
+
+  slide.addText("Jumper Update Table", {
+    x: startX, y: tableY, w: totalW, h: 0.16,
+    fontSize: 9.5, bold: true, color: "1E3A8A"
+  });
+
+  const tableHeader = [
+    { text: "ID", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8 } },
+    { text: "PLC", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8 } },
+    { text: "Area", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8 } },
+    { text: "Category", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8 } },
+    { text: "Installed", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8 } },
+    { text: "Due Date", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8 } },
+    { text: "Status", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8, align: "center" } },
+  ];
+
+  const tableRows = (jumperRegister || []).slice(0, 8).map((r) => {
+    const status = getJumperStatus(r.dueDate);
+    const colors = status ? STATUS_COLORS[status] : null;
+    return [
+      { text: r.jumperId || "—", options: { fontSize: 7.5, bold: true } },
+      { text: r.plc || "—", options: { fontSize: 7.5 } },
+      { text: AREA_LABELS[r.areaId] || r.areaId || "—", options: { fontSize: 7.5 } },
+      { text: r.category || "—", options: { fontSize: 7.5 } },
+      { text: r.installedDate || "—", options: { fontSize: 7.5 } },
+      { text: r.dueDate || "—", options: { fontSize: 7.5 } },
+      {
+        text: status || "—",
+        options: {
+          fontSize: 7.5,
+          align: "center",
+          bold: true,
+          color: colors ? colors.text.replace("#", "") : "64748B",
+          fill: colors ? colors.bg.replace("#", "") : "F1F5F9",
+        },
+      },
+    ];
+  });
+
+  const allRows = [tableHeader, ...(tableRows.length > 0 ? tableRows : [[
+    { text: "Tidak ada record", options: { fontSize: 8, colspan: 7 } }
+  ]])];
+
+  slide.addTable(allRows, {
+    x: startX, y: tableY + 0.18, w: totalW, h: tableH - 0.20,
+    colW: [0.55, 1.15, 1.45, 1.35, 1.30, 1.30, 1.50],
+    border: { color: "CBD5E1", pt: 0.5 },
+    fill: "FFFFFF",
+    autoPage: false
+  });
+}
+
+function _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperPerPlc) {
+  const colX = 9.04; // 8.82 + 0.22 gap = 9.04
+  const colW = 4.07; // 9.04 + 4.07 = 13.11 <= 13.113" (Aman!)
+
+  // 1. Remaining Jumper List
+  const remListY = 0.56;
+  const remListH = 2.65;
+
+  slide.addShape("rect", {
+    x: colX, y: remListY, w: colW, h: remListH,
+    fill: { color: "FFFFFF" },
+    line: { color: "CBD5E1", width: 1 }
+  });
+
+  const countBadge = remainingResult.ok ? ` (${remainingResult.data.length})` : "";
+  slide.addText(`Remaining Jumper List${countBadge}`, {
+    x: colX + 0.12, y: remListY + 0.05, w: colW - 0.24, h: 0.18,
+    fontSize: 10, bold: true, color: "1E3A8A"
+  });
+
+  const remHeaders = [
+    { text: "No", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
+    { text: "ID", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
+    { text: "PLC", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
+    { text: "Description", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
+  ];
+
+  const remData = (remainingResult.data || []).slice(0, 7).map((r, i) => [
+    { text: String(i + 1), options: { fontSize: 7, align: "center" } },
+    { text: r.jumperId || "—", options: { fontSize: 7, bold: true } },
+    { text: r.plc || "—", options: { fontSize: 7 } },
+    { text: r.description || "—", options: { fontSize: 7 } },
+  ]);
+
+  const remRows = [remHeaders, ...(remData.length > 0 ? remData : [[
+    {
+      text: remainingResult.ok
+        ? "Tidak ada jumper yang memenuhi filter (BR-03)"
+        : (remainingResult.reason || "Daftar tidak tersedia"),
+      options: { fontSize: 7.5, colspan: 4, color: "92400E" }
+    }
+  ]])];
+
+  slide.addTable(remRows, {
+    x: colX + 0.08, y: remListY + 0.26, w: colW - 0.16, h: remListH - 0.32,
+    colW: [0.32, 0.72, 0.62, 2.25],
+    border: { color: "E2E8F0", pt: 0.5 },
+    fill: "FFFFFF",
+    autoPage: false
+  });
+
+  // 2. Remaining PLC Ratio Card
+  const plcRatioY = 3.28;
+  const plcRatioH = 0.88;
+
+  slide.addShape("rect", {
+    x: colX, y: plcRatioY, w: colW, h: plcRatioH,
+    fill: { color: "FFFFFF" },
+    line: { color: "CBD5E1", width: 1 }
+  });
+  slide.addText("Remaining PLC Ratio", {
+    x: colX + 0.12, y: plcRatioY + 0.06, w: colW - 0.24, h: 0.16,
+    fontSize: 9, bold: true, color: "1E3A8A"
+  });
+
+  if (plcRatioResult.ok) {
+    const pct = (plcRatioResult.ratio * 100).toFixed(1);
+    slide.addText(`${plcRatioResult.activePlcCount} / ${plcRatioResult.totalPlcInScope}  (${pct}%)`, {
+      x: colX + 0.12, y: plcRatioY + 0.24, w: colW - 0.24, h: 0.34,
+      fontSize: 16, bold: true, color: "0F172A"
+    });
+    slide.addText("PLC with active jumpers / Total PLC in Scope", {
+      x: colX + 0.12, y: plcRatioY + 0.60, w: colW - 0.24, h: 0.16,
+      fontSize: 8, color: "64748B"
+    });
+  } else {
+    slide.addText(plcRatioResult.reason || "Belum tersedia", {
+      x: colX + 0.12, y: plcRatioY + 0.30, w: colW - 0.24, h: 0.30,
+      fontSize: 8.5, color: "E11D48"
+    });
+  }
+
+  // 3. Count per PLC Chart (Kanan Bawah)
+  const plcChartY = 4.24;
+  const plcChartH = 3.00; // 4.24 + 3.00 = 7.24 <= 7.28" (Aman!)
+
+  slide.addShape("rect", {
+    x: colX, y: plcChartY, w: colW, h: plcChartH,
+    fill: { color: "FFFFFF" },
+    line: { color: "CBD5E1", width: 1 }
+  });
+  slide.addText("Count of Remaining Jumper on PLC PP Area", {
+    x: colX + 0.12, y: plcChartY + 0.06, w: colW - 0.24, h: 0.18,
+    fontSize: 9, bold: true, color: "1E3A8A"
+  });
+
+  if (jumperPerPlc.length > 0) {
+    const plcLabels = jumperPerPlc.map((p) => p.plc);
+    const afiVals = jumperPerPlc.map((p) => p.byCategory["AFI"] ?? 0);
+    const sbVals = jumperPerPlc.map((p) => p.byCategory["Shortbranches"] ?? 0);
+    const forcVals = jumperPerPlc.map((p) => p.byCategory["Forces"] ?? 0);
+
+    const plcChartData = [
+      { name: "AFI", labels: plcLabels, values: afiVals },
+      { name: "Shortbranches", labels: plcLabels, values: sbVals },
+      { name: "Forces", labels: plcLabels, values: forcVals },
+    ];
+
+    try {
+      slide.addChart(pptx.ChartType.bar, plcChartData, {
+        x: colX + 0.08, y: plcChartY + 0.28, w: colW - 0.16, h: plcChartH - 0.36,
+        chartColors: ["00B0F0", "BFBFBF", "008577"],
+        showLegend: true,
+        legendPos: "t",
+        legendFontSize: 7.5,
+        dataLabelValue: true,
+        dataLabelFontSize: 7.5,
+        valAxisFontSize: 7.5,
+        catAxisFontSize: 7.5,
+      });
+    } catch (e) {
+      slide.addText("PLC Bar Chart", {
+        x: colX + 0.12, y: plcChartY + 0.8, w: colW - 0.24, h: 0.5,
+        fontSize: 9, color: "64748B", align: "center"
+      });
+    }
+  } else {
+    slide.addText("Tidak ada data jumper aktif", {
+      x: colX + 0.12, y: plcChartY + 1.0, w: colW - 0.24, h: 0.3,
+      fontSize: 9, color: "64748B", align: "center"
+    });
+  }
+}

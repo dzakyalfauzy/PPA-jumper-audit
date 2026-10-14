@@ -20,13 +20,13 @@
 
 import {
   AREA_ID_LIST,
+  AREA_LABELS,
   CATEGORY_LIST,
-  AUTH_STATUS_LIST,
-  MOC_STATUS_LIST,
-  REMOVAL_STATUS,
-  REMOVAL_STATUS_LIST,
-  DUE_DATE_STATUS_LIST,
+  PLC_BY_AREA,
+  JUMPER_STATUS,
+  DUE_SOON_MAX_DAYS,
 } from "./constants.js";
+import { getJumperStatus } from "../logic/selectors.js";
 import { APP_CONFIG } from "./config.js";
 
 // ---------------------------------------------------------------------------
@@ -272,11 +272,33 @@ export function validateWeeklyChartData(weeklyChartData, validWeekLabels) {
 }
 
 // ---------------------------------------------------------------------------
-// VALIDASI JUMPER RECORD (Form B — §8.4, §8.5)
+// VALIDASI JUMPER RECORD (Schema baru: ID 3-digit, Installed/Due Date)
 // ---------------------------------------------------------------------------
 
+/** Validasi format tanggal YYYY-MM-DD dan keabsahan kalendernya. */
+function isValidIsoDate(v) {
+  if (!isNonEmptyString(v)) return false;
+  const m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+  const date = new Date(y, mo - 1, d);
+  return (
+    date.getFullYear() === y &&
+    date.getMonth() === mo - 1 &&
+    date.getDate() === d
+  );
+}
+
 /**
- * Memvalidasi satu record jumper.
+ * Memvalidasi satu record jumper (schema baru).
+ *
+ * Aturan:
+ *   - jumperId: string numerik 3-digit ("001"–"999"), unik (BR-11).
+ *   - plc: wajib, dan harus termasuk dalam PLC_BY_AREA[areaId].
+ *   - installedDate: wajib, format YYYY-MM-DD valid.
+ *   - dueDate: opsional; jika diisi harus YYYY-MM-DD valid.
+ *
  * @param {object} record
  * @param {Set<string>} existingIds — Set jumperId yang sudah ada (untuk cek duplikat)
  * @returns {{ valid, errors, warnings }}
@@ -286,13 +308,17 @@ export function validateJumperRecord(record, existingIds = new Set()) {
   const warnings = [];
   const ctx = record.jumperId ? `Jumper "${record.jumperId}"` : "Jumper (ID kosong)";
 
-  // --- Identity (§8.4) ---
+  // --- Identity ---
 
   if (!isNonEmptyString(record.jumperId)) {
-    errors.push("Jumper ID wajib diisi dan tidak boleh kosong.");
+    errors.push("ID wajib diisi dan tidak boleh kosong.");
+  } else if (!/^\d{3}$/.test(record.jumperId.trim())) {
+    errors.push(
+      `${ctx}: ID harus berupa angka 3 digit (001–999), contoh "007".`
+    );
   } else if (existingIds.has(record.jumperId.trim())) {
     errors.push(
-      `Jumper ID "${record.jumperId}" sudah digunakan. Jumper ID harus unik (BR-11).`
+      `ID "${record.jumperId}" sudah digunakan. ID harus unik (BR-11).`
     );
   }
 
@@ -302,6 +328,16 @@ export function validateJumperRecord(record, existingIds = new Set()) {
 
   if (!AREA_ID_LIST.includes(record.areaId)) {
     errors.push(`${ctx}: Area tidak valid ("${record.areaId}").`);
+  } else if (isNonEmptyString(record.plc)) {
+    // PLC harus berasal dari mapping area terpusat
+    const allowed = PLC_BY_AREA[record.areaId] || [];
+    if (!allowed.includes(record.plc.trim())) {
+      errors.push(
+        `${ctx}: PLC "${record.plc}" tidak terdaftar untuk area ` +
+        `"${AREA_LABELS[record.areaId] || record.areaId}". ` +
+        `Pilih PLC dari daftar area tersebut.`
+      );
+    }
   }
 
   if (!CATEGORY_LIST.includes(record.category)) {
@@ -314,75 +350,43 @@ export function validateJumperRecord(record, existingIds = new Set()) {
 
   // equipmentTag opsional — tidak divalidasi kontennya
 
-  // --- Status dan Periode (§8.5) ---
+  // --- Tanggal (schema baru) ---
 
-  if (!isNonEmptyString(record.installedWeekOrDate)) {
-    errors.push(`${ctx}: Installed Week/Date wajib diisi.`);
-  }
-
-  if (!AUTH_STATUS_LIST.includes(record.authorizationStatus)) {
+  if (!isValidIsoDate(record.installedDate)) {
     errors.push(
-      `${ctx}: Authorization Status tidak valid ("${record.authorizationStatus}"). ` +
-      `Nilai yang diizinkan: ${AUTH_STATUS_LIST.join(", ")}.`
+      `${ctx}: Installed Date wajib diisi dengan format YYYY-MM-DD.`
     );
   }
 
-  if (!MOC_STATUS_LIST.includes(record.mocStatus)) {
+  if (!isNullOrUndefined(record.dueDate) && record.dueDate !== "" &&
+      !isValidIsoDate(record.dueDate)) {
     errors.push(
-      `${ctx}: MOC Status tidak valid ("${record.mocStatus}"). ` +
-      `Nilai yang diizinkan: ${MOC_STATUS_LIST.join(", ")}.`
+      `${ctx}: Due Date tidak valid ("${record.dueDate}"). ` +
+      `Gunakan format YYYY-MM-DD atau kosongkan.`
     );
   }
 
-  if (isNullOrUndefined(record.identificationYear)) {
-    errors.push(`${ctx}: Identification Year wajib diisi (digunakan untuk filter BR-03).`);
-  } else if (!isValidYear(record.identificationYear)) {
-    errors.push(
-      `${ctx}: Identification Year tidak valid (${record.identificationYear}). ` +
-      `Masukkan tahun antara ${APP_CONFIG.yearRange.min} dan ${APP_CONFIG.yearRange.max}.`
-    );
-  }
-
-  if (!REMOVAL_STATUS_LIST.includes(record.removalStatus)) {
-    errors.push(
-      `${ctx}: Removal Status tidak valid ("${record.removalStatus}"). ` +
-      `Nilai yang diizinkan: ${REMOVAL_STATUS_LIST.join(", ")}.`
-    );
-  }
-
-  // Removal Week dan Year wajib jika Removal Status = Yes
-  if (record.removalStatus === REMOVAL_STATUS.YES) {
-    if (!isNonEmptyString(record.removalWeek)) {
-      errors.push(`${ctx}: Removal Week wajib diisi jika Removal Status = Yes.`);
-    }
-    if (isNullOrUndefined(record.removalYear)) {
-      errors.push(`${ctx}: Removal Year wajib diisi jika Removal Status = Yes.`);
-    } else if (!isValidYear(record.removalYear)) {
-      errors.push(
-        `${ctx}: Removal Year tidak valid (${record.removalYear}). ` +
-        `Masukkan tahun antara ${APP_CONFIG.yearRange.min} dan ${APP_CONFIG.yearRange.max}.`
+  // Due Date < Installed Date → warning informatif (tidak memblokir)
+  if (isValidIsoDate(record.installedDate) && isValidIsoDate(record.dueDate)) {
+    if (record.dueDate < record.installedDate) {
+      warnings.push(
+        `${ctx}: Due Date (${record.dueDate}) lebih awal dari Installed Date ` +
+        `(${record.installedDate}). Periksa kembali tanggal.`
       );
     }
   }
 
-  // Due Date (§8.6) — status konfirmasi wajib, nilai tanggal kondisional
-  if (!DUE_DATE_STATUS_LIST.includes(record.dueDateStatus)) {
-    errors.push(
-      `${ctx}: Due Date Status tidak valid ("${record.dueDateStatus}"). ` +
-      `Nilai yang diizinkan: ${DUE_DATE_STATUS_LIST.join(", ")}.`
+  // Status DUE (Due Soon / Expired) bukan input pengguna — hanya informatif
+  const status = getJumperStatus(record.dueDate);
+  if (status === JUMPER_STATUS.EXPIRED) {
+    warnings.push(`${ctx}: Due Date sudah lewat (status: Expired).`);
+  } else if (status === JUMPER_STATUS.DUE_SOON) {
+    warnings.push(
+      `${ctx}: Due Date mendekati (status: Due Soon — ≤ ${DUE_SOON_MAX_DAYS} hari).`
     );
-  }
-  // Jika dueDateStatus = confirmed, dueDate harus diisi
-  if (record.dueDateStatus === "confirmed" && !isNonEmptyString(record.dueDate)) {
-    errors.push(`${ctx}: Due Date wajib diisi jika status = confirmed.`);
-  }
-
-  // Quantity
-  if (isNullOrUndefined(record.quantity)) {
-    errors.push(`${ctx}: Quantity wajib diisi.`);
-  } else if (!isPositiveInteger(record.quantity)) {
-    errors.push(
-      `${ctx}: Quantity harus bilangan bulat >= 1 (diisi: ${record.quantity}).`
+  } else if (!isValidIsoDate(record.dueDate)) {
+    warnings.push(
+      `${ctx}: Due Date kosong/tidak valid — status tidak dapat ditentukan.`
     );
   }
 
