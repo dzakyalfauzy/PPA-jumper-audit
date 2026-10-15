@@ -5,45 +5,19 @@
  * File ini memisahkan parameter yang dapat berubah tanpa mengubah logika bisnis.
  * Semua nilai default di sini adalah SEMENTARA dan harus dikonfirmasi pemilik proses.
  *
- * Open Questions yang bergantung pada file ini:
- *   OQ-01: identificationYearFilter — apakah tetap 2026 atau bergeser setiap tahun?
- *   OQ-07: weekLabelOrder — konvensi minggu yang digunakan (ISO, internal, atau label bebas)?
+ * Field lama yang DIHAPUS dari konfigurasi (revisi):
+ *   - reporting.identificationYearFilter (OQ-01) — BR-03 dihapus dari model.
+ *   - weekLabels.order (OQ-07) — config.weekLabels dihapus; urutan minggu chart
+ *     sekarang diurutkan kronologis dari baris weeklyChartData.
  *
  * INSTRUKSI UNTUK PEMILIK PROSES:
- *   Ubah nilai di APP_CONFIG.reporting.identificationYearFilter sesuai tahun identifikasi
- *   yang berlaku untuk laporan. Jangan ubah logika di selectors.js untuk mengakomodasi
+ *   Jangan ubah logika di selectors.js untuk mengakomodasi
  *   aturan yang belum dikonfirmasi.
  */
 
 "use strict";
 
 export const APP_CONFIG = Object.freeze({
-
-  /**
-   * Konfigurasi reporting dan filter periode.
-   * [OQ-01] identificationYearFilter:
-   *   Nilai null berarti filter tahun identifikasi BELUM dikonfigurasi.
-   *   Isi dengan tahun integer (misal: 2026) setelah dikonfirmasi pemilik proses.
-   *   Sistem akan menampilkan warning jika nilai ini null saat menghitung
-   *   Remaining Jumper List (BR-03).
-   *
-   *   Catatan: field ini TIDAK otomatis mengikuti reportingYear.
-   *   Keduanya adalah nilai terpisah yang dapat berbeda.
-   */
-  reporting: Object.freeze({
-    identificationYearFilter: null, // [OQ-01] Isi setelah dikonfirmasi — jangan hardcode 2026
-  }),
-
-  /**
-   * Konfigurasi urutan week label.
-   * [OQ-07] Konvensi minggu yang digunakan belum dikonfirmasi.
-   * weekLabelOrder: "explicit" berarti urutan dipertahankan sesuai input pengguna,
-   *   tidak diurutkan secara alfabetis atau numeris.
-   * Jangan ubah ke "alphabetical" atau "numeric" tanpa konfirmasi pemilik proses.
-   */
-  weekLabels: Object.freeze({
-    order: "explicit", // "explicit" = ikuti urutan input user; JANGAN ubah ke sort alfabetis
-  }),
 
   /**
    * Konfigurasi discrepancy warning antara areaSummary manual dan register.

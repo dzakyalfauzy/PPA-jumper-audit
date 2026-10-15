@@ -1,7 +1,7 @@
 /**
  * jumperStatus.test.js
  * Test revisi Jumper Register:
- *   - getJumperStatus: batas Normal / Upcoming / Due Soon / Expired (7 & 30 hari, kalender)
+ *   - getJumperStatus: batas Active / Expiring Soon / Expired (7 hari, kalender)
  *   - jumperStatusCounts
  *   - PLC_BY_AREA: validitas mapping area → PLC
  *   - nextJumperId: generator ID 3-digit
@@ -16,8 +16,7 @@ import {
 } from "../logic/selectors.js";
 import {
   JUMPER_STATUS,
-  DUE_SOON_MAX_DAYS,
-  UPCOMING_MAX_DAYS,
+  EXPIRING_SOON_MAX_DAYS,
   STATUS_COLORS,
   PLC_BY_AREA,
   AREA_ID_LIST,
@@ -32,32 +31,32 @@ import {
 const TODAY = new Date(2026, 5, 15);
 
 // ---------------------------------------------------------------------------
-// getJumperStatus — batas status
+// getJumperStatus — batas status (3-status system)
 // ---------------------------------------------------------------------------
 
-describe("getJumperStatus", () => {
-  test("Due Date hari ini = Due Soon (bukan Normal, bukan Expired)", () => {
-    expect(getJumperStatus("2026-06-15", TODAY)).toBe(JUMPER_STATUS.DUE_SOON);
+describe("getJumperStatus — 3-status system", () => {
+  test("Due Date hari ini = Expiring Soon (bukan Active, bukan Expired)", () => {
+    expect(getJumperStatus("2026-06-15", TODAY)).toBe(JUMPER_STATUS.EXPIRING_SOON);
   });
 
-  test("Due Date besok (diff=1) = Due Soon", () => {
-    expect(getJumperStatus("2026-06-16", TODAY)).toBe(JUMPER_STATUS.DUE_SOON);
+  test("Due Date besok (diff=1) = Expiring Soon", () => {
+    expect(getJumperStatus("2026-06-16", TODAY)).toBe(JUMPER_STATUS.EXPIRING_SOON);
   });
 
-  test("Due Date tepat 7 hari lagi = Due Soon (batas inklusif)", () => {
-    expect(getJumperStatus("2026-06-22", TODAY)).toBe(JUMPER_STATUS.DUE_SOON);
+  test("Due Date tepat 7 hari lagi = Expiring Soon (batas inklusif)", () => {
+    expect(getJumperStatus("2026-06-22", TODAY)).toBe(JUMPER_STATUS.EXPIRING_SOON);
   });
 
-  test("Due Date 8 hari lagi = Upcoming (batas eksklusif Due Soon)", () => {
-    expect(getJumperStatus("2026-06-23", TODAY)).toBe(JUMPER_STATUS.UPCOMING);
+  test("Due Date 8 hari lagi = Active (batas eksklusif Expiring Soon)", () => {
+    expect(getJumperStatus("2026-06-23", TODAY)).toBe(JUMPER_STATUS.ACTIVE);
   });
 
-  test("Due Date tepat 30 hari lagi = Upcoming (batas inklusif)", () => {
-    expect(getJumperStatus("2026-07-15", TODAY)).toBe(JUMPER_STATUS.UPCOMING);
+  test("Due Date 30 hari lagi = Active", () => {
+    expect(getJumperStatus("2026-07-15", TODAY)).toBe(JUMPER_STATUS.ACTIVE);
   });
 
-  test("Due Date 31 hari lagi = Normal (batas eksklusif Upcoming)", () => {
-    expect(getJumperStatus("2026-07-16", TODAY)).toBe(JUMPER_STATUS.NORMAL);
+  test("Due Date 31 hari lagi = Active", () => {
+    expect(getJumperStatus("2026-07-16", TODAY)).toBe(JUMPER_STATUS.ACTIVE);
   });
 
   test("Due Date kemarin = Expired", () => {
@@ -68,7 +67,7 @@ describe("getJumperStatus", () => {
     expect(getJumperStatus("2020-01-01", TODAY)).toBe(JUMPER_STATUS.EXPIRED);
   });
 
-  test("dueDate null = null (BUKAN Normal)", () => {
+  test("dueDate null = null (BUKAN Active)", () => {
     expect(getJumperStatus(null, TODAY)).toBeNull();
   });
 
@@ -76,7 +75,7 @@ describe("getJumperStatus", () => {
     expect(getJumperStatus(undefined, TODAY)).toBeNull();
   });
 
-  test("dueDate format salah ('Wk51 2026') = null (BUKAN Normal)", () => {
+  test("dueDate format salah ('Wk51 2026') = null (BUKAN Active)", () => {
     expect(getJumperStatus("Wk51 2026", TODAY)).toBeNull();
   });
 
@@ -91,17 +90,16 @@ describe("getJumperStatus", () => {
   test("perbandingan pakai tanggal kalender, bukan timestamp", () => {
     // 2026-06-15T23:59 vs TODAY (midnight lokal) — tetap dihitung sebagai hari yang sama
     const lateNightToday = new Date(2026, 5, 15, 23, 59, 59);
-    expect(getJumperStatus("2026-06-15", lateNightToday)).toBe(JUMPER_STATUS.DUE_SOON);
+    expect(getJumperStatus("2026-06-15", lateNightToday)).toBe(JUMPER_STATUS.EXPIRING_SOON);
   });
 
-  test("threshold terpusat: Due Soon 7 hari, Upcoming 30 hari", () => {
-    expect(DUE_SOON_MAX_DAYS).toBe(7);
-    expect(UPCOMING_MAX_DAYS).toBe(30);
+  test("threshold terpusat: Expiring Soon 7 hari", () => {
+    expect(EXPIRING_SOON_MAX_DAYS).toBe(7);
   });
 
-  test("nilai status hanya dari JUMPER_STATUS (4 entri)", () => {
+  test("nilai status hanya dari JUMPER_STATUS (3 entri)", () => {
     expect(Object.values(JUMPER_STATUS).sort()).toEqual(
-      ["Due Soon", "Expired", "Normal", "Upcoming"].sort()
+      ["Active", "Expiring Soon", "Expired"].sort()
     );
   });
 });
@@ -113,20 +111,19 @@ describe("getJumperStatus", () => {
 describe("jumperStatusCounts", () => {
   test("menghitung distribusi status seluruh register", () => {
     const reg = [
-      { dueDate: "2026-06-15" }, // Due Soon (hari ini)
-      { dueDate: "2026-06-22" }, // Due Soon (+7)
-      { dueDate: "2026-06-23" }, // Upcoming (+8)
-      { dueDate: "2026-07-15" }, // Upcoming (+30)
-      { dueDate: "2026-07-16" }, // Normal (+31)
+      { dueDate: "2026-06-15" }, // Expiring Soon (hari ini)
+      { dueDate: "2026-06-22" }, // Expiring Soon (+7)
+      { dueDate: "2026-06-23" }, // Active (+8)
+      { dueDate: "2026-07-15" }, // Active (+30)
+      { dueDate: "2026-07-16" }, // Active (+31)
       { dueDate: "2026-06-14" }, // Expired (-1)
       { dueDate: null },         // noDate
       { dueDate: "bukan-tanggal" }, // noDate
     ];
     const counts = jumperStatusCounts(reg, TODAY);
     expect(counts).toEqual({
-      normal: 1,
-      upcoming: 2,
-      dueSoon: 2,
+      active: 3,
+      expiringSoon: 2,
       expired: 1,
       noDate: 2,
       total: 8,
@@ -136,12 +133,12 @@ describe("jumperStatusCounts", () => {
   test("register kosong = semua 0", () => {
     const counts = jumperStatusCounts([], TODAY);
     expect(counts.total).toBe(0);
-    expect(counts.normal + counts.upcoming + counts.dueSoon + counts.expired + counts.noDate).toBe(0);
+    expect(counts.active + counts.expiringSoon + counts.expired + counts.noDate).toBe(0);
   });
 
-  test("record tanpa dueDate TIDAK dihitung sebagai Normal", () => {
+  test("record tanpa dueDate TIDAK dihitung sebagai Active", () => {
     const counts = jumperStatusCounts([{ dueDate: null }], TODAY);
-    expect(counts.normal).toBe(0);
+    expect(counts.active).toBe(0);
     expect(counts.noDate).toBe(1);
   });
 
@@ -155,28 +152,26 @@ describe("jumperStatusCounts", () => {
     ];
     const c = jumperStatusCounts(reg, TODAY);
     expect(c.total).toBe(5);
-    expect(c.normal + c.upcoming + c.dueSoon + c.expired + c.noDate).toBe(5);
+    expect(c.active + c.expiringSoon + c.expired + c.noDate).toBe(5);
   });
 });
 
 // ---------------------------------------------------------------------------
-// STATUS_COLORS — palet untuk keempat status
+// STATUS_COLORS — palet untuk tiga status
 // ---------------------------------------------------------------------------
 
 describe("STATUS_COLORS", () => {
-  test("tersedia untuk Normal, Upcoming, Due Soon, Expired", () => {
-    expect(STATUS_COLORS[JUMPER_STATUS.NORMAL]).toBeDefined();
-    expect(STATUS_COLORS[JUMPER_STATUS.UPCOMING]).toBeDefined();
-    expect(STATUS_COLORS[JUMPER_STATUS.DUE_SOON]).toBeDefined();
+  test("tersedia untuk Active, Expiring Soon, Expired", () => {
+    expect(STATUS_COLORS[JUMPER_STATUS.ACTIVE]).toBeDefined();
+    expect(STATUS_COLORS[JUMPER_STATUS.EXPIRING_SOON]).toBeDefined();
     expect(STATUS_COLORS[JUMPER_STATUS.EXPIRED]).toBeDefined();
-    expect(Object.keys(STATUS_COLORS)).toHaveLength(4);
+    expect(Object.keys(STATUS_COLORS)).toHaveLength(3);
   });
 
   test("warna sesuai spesifikasi", () => {
-    expect(STATUS_COLORS.Normal).toEqual({ bg: "#DCFCE7", text: "#166534" });
-    expect(STATUS_COLORS.Upcoming).toEqual({ bg: "#DBEAFE", text: "#1D4ED8" });
-    expect(STATUS_COLORS["Due Soon"]).toEqual({ bg: "#FEF3C7", text: "#92400E" });
-    expect(STATUS_COLORS.Expired).toEqual({ bg: "#FEE2E2", text: "#991B1B" });
+    expect(STATUS_COLORS[JUMPER_STATUS.ACTIVE]).toEqual({ bg: "#DCFCE7", text: "#166534" });
+    expect(STATUS_COLORS[JUMPER_STATUS.EXPIRING_SOON]).toEqual({ bg: "#FEF3C7", text: "#92400E" });
+    expect(STATUS_COLORS[JUMPER_STATUS.EXPIRED]).toEqual({ bg: "#FEE2E2", text: "#991B1B" });
   });
 
   test("setiap status punya bg dan text hex", () => {
@@ -199,8 +194,8 @@ describe("PLC_BY_AREA", () => {
     }
   });
 
-  test("jumlah PLC sesuai spesifikasi: Dryer 14, Kiln 25, Furnace 18, Converter 6", () => {
-    expect(PLC_BY_AREA.dryer_cm).toHaveLength(14);
+  test("jumlah PLC sesuai spesifikasi: Dryer 13, Kiln 25, Furnace 18, Converter 6", () => {
+    expect(PLC_BY_AREA.dryer_cm).toHaveLength(13);
     expect(PLC_BY_AREA.kiln_cts).toHaveLength(25);
     expect(PLC_BY_AREA.furnace).toHaveLength(18);
     expect(PLC_BY_AREA.converter).toHaveLength(6);
@@ -292,6 +287,7 @@ describe("migrateJumperRecords", () => {
     expect(migrated.installedWeekOrDate).toBeUndefined();
     expect(migrated.quantity).toBeUndefined();
     expect(migrated.dueDateStatus).toBeUndefined();
+    expect(migrated.authorizationType).toBeNull();
   });
 
   test("installedDate week-string lama → null", () => {
@@ -351,6 +347,7 @@ describe("migrateJumperRecords", () => {
       equipmentTag: "tag-1",
       installedDate: "2026-09-27",
       dueDate: "2027-01-15",
+      authorizationType: null,
     });
   });
 });

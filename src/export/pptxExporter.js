@@ -1,6 +1,6 @@
 /**
  * pptxExporter.js
- * Generator PowerPoint (PPTX) 16:9 satu slide yang proporsional dan fit 100% di kanvas.
+ * Generator PowerPoint (PPTX) 16:9 satu slide yang proporsional dan fit 100% di kanvas (revisi).
  *
  * Dimensi Kanvas 16:9 Widescreen Resmi: 13.333" x 7.500"
  * Batas Konten Ketat:
@@ -10,27 +10,25 @@
  *   - Kolom Pendukung (Kanan): Lebar 4.07" (9.04" s.d. 13.11")
  *   - Jarak antar Kolom Utama & Kanan: 0.22"
  *
- * Verifikasi Batas Vertikal (Layout Diperbaiki):
- *   - Header: y = 0.00, h = 0.50
- *   - Baris 1: Area Summary Cards (y = 0.56, h = 0.48) -> y = 1.04
- *   - Baris 2: 12 Combo Charts (y = 1.10, h = 4.00) -> y = 5.10
- *   - Baris 3: Jumper Update Table (y = 5.10, h = 2.14) -> y = 7.24 <= 7.28" (Aman!)
- *     (kartu status Normal/Upcoming/Due Soon/Expired dihapus dari slide)
- *
- *   - Kanan Atas: Remaining List (y = 0.56, h = 2.65) -> y = 3.21
- *   - Kanan Tengah: PLC Ratio (y = 3.28, h = 0.88) -> y = 4.16
- *   - Kanan Bawah: Count per PLC Chart (y = 4.24, h = 3.00) -> y = 7.24 <= 7.28" (Aman!)
+ * Perubahan Revisi:
+ *   - Hapus 4 Area Summary Cards
+ *   - Rename "Jumper Update Table" → "Total Jumper With MOC/Authorized Jumper"
+ *   - Rename "Remaining Jumper List" → "Jumper Without MOC/Authorized Jumper"
+ *   - PLCs With Active Jumper / Total PLCs — Percentage
+ *   - Status 3-status: Active / Expiring Soon / Expired
+ *   - 12 charts tetap dipertahankan
  */
 
 "use strict";
 
-import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STATUS_COLORS } from "../model/constants.js";
+import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STATUS_COLORS, EXPIRING_SOON_MAX_DAYS } from "../model/constants.js";
 import {
-  remainingJumperList,
-  remainingPlcRatio,
+  plcsWithoutActiveJumpers,
   jumperCountPerPlc,
   calculateAreaSummariesFromWeeklyChart,
   getJumperStatus,
+  getAuthorizedJumpers,
+  getNonAuthorizedJumpers,
 } from "../logic/selectors.js";
 import { getAllChartSeries, getChartKey } from "../logic/chartData.js";
 import { CATEGORY_COLORS, ACTUAL_COLOR } from "../preview/chartRenderer.js";
@@ -102,33 +100,27 @@ export async function exportToPowerPoint(state, PptxGenJSLib = null) {
   const reportingYear = config.reportingYear;
   const reportingWeek = config.reportingWeek;
   const reportingWeekLabel = reportingWeek != null ? `W${reportingWeek}` : "—";
-  const displayWeekLabels = getOptimizedWeekLabels(config.weekLabels, reportingWeek);
+  const displayWeekLabels = getOptimizedWeekLabels(_getSortedWeekLabels(state), reportingWeek);
 
-  const appConfig = {
-    reporting: { identificationYearFilter: config.identificationYearFilter ?? null },
-    discrepancyWarning: { enabled: true, basis: null },
-  };
-
-  const remainingResult = remainingJumperList(state.jumperRegister, appConfig);
-  const plcRatioResult = remainingPlcRatio(state.jumperRegister, config.totalPlcInScope);
+  const plcMetricResult = plcsWithoutActiveJumpers(state.jumperRegister, config.totalPlcInScope);
   const jumperPerPlc = jumperCountPerPlc(state.jumperRegister);
   const calculatedSummaries = calculateAreaSummariesFromWeeklyChart(state.weeklyChartData, reportingWeek, reportingYear);
   const allChartSeries = getAllChartSeries(state.weeklyChartData, displayWeekLabels);
 
+  const authorizedJumpers = getAuthorizedJumpers(state.jumperRegister);
+  const nonAuthorizedJumpers = getNonAuthorizedJumpers(state.jumperRegister);
+
   // 1. Header
   _buildHeader(slide, config, reportingWeekLabel);
 
-  // 2. Area Summary Cards
-  _buildAreaSummaryCards(slide, calculatedSummaries);
-
-  // 3. 12 Charts Grid
+  // 2. 12 Charts Grid (Area Summary cards removed)
   _build12Charts(slide, pptx, allChartSeries, calculatedSummaries, displayWeekLabels);
 
-  // 4. Bottom Left: Jumper Update Table (kartu status dihapus — tabel mengisi ruang)
-  _buildBottomLeft(slide, state.jumperRegister);
+  // 3. Bottom Left: Total Jumper With MOC/Authorized Jumper (was: Jumper Update Table)
+  _buildBottomLeft(slide, authorizedJumpers);
 
-  // 5. Right Column: Remaining List, PLC Ratio, & PLC Chart
-  _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperPerPlc);
+  // 4. Right Column: Jumper Without MOC/Authorized Jumper, PLCs With Active Jumper, & PLC Chart
+  _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthorizedJumpers);
 
   // Export buffer & XML post-process
   const safeTitle = (config.title || "PPA_Jumper_Audit").replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -188,6 +180,37 @@ export async function exportToPowerPoint(state, PptxGenJSLib = null) {
   return { success: true, filename };
 }
 
+// Helper to get sorted week labels from state (reused from slidePreview)
+function _getSortedWeekLabels(state) {
+  const weeks = new Set();
+  for (const row of state.weeklyChartData) {
+    if (row.week) weeks.add(row.week);
+  }
+  return Array.from(weeks).sort((a, b) => {
+    const pa = _parseWeekForSort(a);
+    const pb = _parseWeekForSort(b);
+    if (pa.year !== pb.year) return pa.year - pb.year;
+    if (pa.weekNumber !== pb.weekNumber) return pa.weekNumber - pb.weekNumber;
+    return a.localeCompare(b);
+  });
+}
+
+function _parseWeekForSort(label) {
+  const str = String(label).trim();
+  const yearMatch = str.match(/(?:wk|w)\s*(\d{1,2})\s*\(['"]?(\d{2,4})['"]?\)/i);
+  if (yearMatch) {
+    const wNum = parseInt(yearMatch[1], 10);
+    let y = parseInt(yearMatch[2], 10);
+    if (y < 100) y = 2000 + y;
+    return { weekNumber: wNum, year: y };
+  }
+  const simpleMatch = str.match(/^(?:wk|w)?\s*(\d{1,2})$/i);
+  if (simpleMatch) {
+    return { weekNumber: parseInt(simpleMatch[1], 10), year: 2026 };
+  }
+  return { weekNumber: 999, year: 2026 };
+}
+
 // ---------------------------------------------------------------------------
 // SECTION BUILDERS
 // ---------------------------------------------------------------------------
@@ -213,47 +236,14 @@ function _buildHeader(slide, config, reportingWeekLabel) {
   });
 }
 
-function _buildAreaSummaryCards(slide, calculatedSummaries) {
-  const startX = MARGIN; // 0.22
-  const startY = 0.56;
-  const cardW = 2.08;
-  const cardH = 0.48;
-  const gap = 0.09;
-
-  AREA_ID_LIST.forEach((areaId, i) => {
-    const x = startX + i * (cardW + gap);
-    const summary = calculatedSummaries[areaId];
-    const val = summary && summary.totalActual !== null ? String(summary.totalActual) : "—";
-    const label = AREA_LABELS[areaId] || areaId;
-
-    slide.addShape("rect", {
-      x, y: startY, w: cardW, h: cardH,
-      fill: { color: "FFFFFF" },
-      line: { color: "CBD5E1", width: 1 }
-    });
-
-    slide.addText(label.toUpperCase(), {
-      x, y: startY + 0.03, w: cardW, h: 0.15,
-      fontSize: 8, bold: true, color: "1E3A8A",
-      align: "center", valign: "top"
-    });
-
-    slide.addText(`${val} jumpers`, {
-      x, y: startY + 0.17, w: cardW, h: 0.27,
-      fontSize: 11, bold: true, color: "0F172A",
-      align: "center", valign: "middle"
-    });
-  });
-}
-
 function _build12Charts(slide, pptx, allChartSeries, calculatedSummaries, displayWeekLabels) {
   const colStartX = MARGIN; // 0.22
-  const colStartY = 1.10;
+  const colStartY = 0.56;   // langsung di bawah header (Area Summary cards removed)
   const colW = 2.08;
   const colGap = 0.09;
   const headerH = 0.22;
-  const chartH = 1.20;   // ditambah dari 1.00 agar chart area = 1.07"
-  const chartGap = 0.05; // gap antar baris chart sedikit diperlebar
+  const chartH = 1.20;
+  const chartGap = 0.05;
 
   AREA_ID_LIST.forEach((areaId, areaIdx) => {
     const x = colStartX + areaIdx * (colW + colGap);
@@ -347,16 +337,16 @@ function _build12Charts(slide, pptx, allChartSeries, calculatedSummaries, displa
   });
 }
 
-function _buildBottomLeft(slide, jumperRegister) {
+function _buildBottomLeft(slide, authorizedJumpers) {
   const startX = MARGIN; // 0.22
   const startY = 5.10;   // langsung di bawah charts (y = 5.10) — chart grid dipertinggi
   const totalW = 8.60; // 4 * 2.08 + 3 * 0.09 = 8.59 (~8.60)
 
-  // Jumper Update Table — mengisi ruang sisa di bawah chart grid
+  // Total Jumper With MOC/Authorized Jumper — mengisi ruang sisa di bawah chart grid
   const tableY = startY;         // 5.10
   const tableH = 2.14;           // 5.10 + 2.14 = 7.24 <= 7.28" (Aman!)
 
-  slide.addText("Jumper Update Table", {
+  slide.addText("Total Jumper With MOC/Authorized Jumper", {
     x: startX, y: tableY, w: totalW, h: 0.16,
     fontSize: 9.5, bold: true, color: "1E3A8A"
   });
@@ -371,7 +361,7 @@ function _buildBottomLeft(slide, jumperRegister) {
     { text: "Status", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 8, align: "center" } },
   ];
 
-  const tableRows = (jumperRegister || []).slice(0, 8).map((r) => {
+  const tableRows = (authorizedJumpers || []).slice(0, 8).map((r) => {
     const status = getJumperStatus(r.dueDate);
     const colors = status ? STATUS_COLORS[status] : null;
     return [
@@ -395,7 +385,7 @@ function _buildBottomLeft(slide, jumperRegister) {
   });
 
   const allRows = [tableHeader, ...(tableRows.length > 0 ? tableRows : [[
-    { text: "Tidak ada record", options: { fontSize: 8, colspan: 7 } }
+    { text: "Tidak ada record Authorized", options: { fontSize: 8, colspan: 7 } }
   ]])];
 
   slide.addTable(allRows, {
@@ -407,11 +397,11 @@ function _buildBottomLeft(slide, jumperRegister) {
   });
 }
 
-function _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperPerPlc) {
+function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthorizedJumpers = []) {
   const colX = 9.04; // 8.82 + 0.22 gap = 9.04
   const colW = 4.07; // 9.04 + 4.07 = 13.11 <= 13.113" (Aman!)
 
-  // 1. Remaining Jumper List
+  // 1. Jumper Without MOC/Authorized Jumper (was: Remaining Jumper List)
   const remListY = 0.56;
   const remListH = 2.65;
 
@@ -421,8 +411,8 @@ function _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperP
     line: { color: "CBD5E1", width: 1 }
   });
 
-  const countBadge = remainingResult.ok ? ` (${remainingResult.data.length})` : "";
-  slide.addText(`Remaining Jumper List${countBadge}`, {
+  const countBadge = ` (${nonAuthorizedJumpers.length})`;
+  slide.addText(`Jumper Without MOC/Authorized Jumper${countBadge}`, {
     x: colX + 0.12, y: remListY + 0.05, w: colW - 0.24, h: 0.18,
     fontSize: 10, bold: true, color: "1E3A8A"
   });
@@ -434,21 +424,19 @@ function _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperP
     { text: "Description", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
   ];
 
-  const remData = (remainingResult.data || []).slice(0, 7).map((r, i) => [
-    { text: String(i + 1), options: { fontSize: 7, align: "center" } },
-    { text: r.jumperId || "—", options: { fontSize: 7, bold: true } },
-    { text: r.plc || "—", options: { fontSize: 7 } },
-    { text: r.description || "—", options: { fontSize: 7 } },
-  ]);
+  const nonAuthItems = (nonAuthorizedJumpers || []).slice(0, 8);
+  const remData = nonAuthItems.length > 0
+    ? nonAuthItems.map((r, i) => [
+        { text: String(i + 1), options: { fontSize: 7 } },
+        { text: r.jumperId || "—", options: { fontSize: 7, bold: true } },
+        { text: r.plc || "—", options: { fontSize: 7 } },
+        { text: r.description || "—", options: { fontSize: 7 } },
+      ])
+    : [[
+        { text: "Tidak ada record Non-Authorized", options: { fontSize: 7, colspan: 4, color: "64748B" } }
+      ]];
 
-  const remRows = [remHeaders, ...(remData.length > 0 ? remData : [[
-    {
-      text: remainingResult.ok
-        ? "Tidak ada jumper yang memenuhi filter (BR-03)"
-        : (remainingResult.reason || "Daftar tidak tersedia"),
-      options: { fontSize: 7.5, colspan: 4, color: "92400E" }
-    }
-  ]])];
+  const remRows = [remHeaders, ...remData];
 
   slide.addTable(remRows, {
     x: colX + 0.08, y: remListY + 0.26, w: colW - 0.16, h: remListH - 0.32,
@@ -458,7 +446,7 @@ function _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperP
     autoPage: false
   });
 
-  // 2. Remaining PLC Ratio Card
+  // 2. PLCs With Active Jumper / Total PLCs Card
   const plcRatioY = 3.28;
   const plcRatioH = 0.88;
 
@@ -467,23 +455,23 @@ function _buildRightColumn(slide, pptx, remainingResult, plcRatioResult, jumperP
     fill: { color: "FFFFFF" },
     line: { color: "CBD5E1", width: 1 }
   });
-  slide.addText("Remaining PLC Ratio", {
+  slide.addText("PLCs With Active Jumper / Total PLCs", {
     x: colX + 0.12, y: plcRatioY + 0.06, w: colW - 0.24, h: 0.16,
     fontSize: 9, bold: true, color: "1E3A8A"
   });
 
-  if (plcRatioResult.ok) {
-    const pct = (plcRatioResult.ratio * 100).toFixed(1);
-    slide.addText(`${plcRatioResult.activePlcCount} / ${plcRatioResult.totalPlcInScope}  (${pct}%)`, {
+  if (plcMetricResult.ok) {
+    const pct = plcMetricResult.percentage !== null ? plcMetricResult.percentage.toFixed(1) : "—";
+    slide.addText(`${plcMetricResult.plcsWithActive} / ${plcMetricResult.totalPlcInScope}  (${pct}%)`, {
       x: colX + 0.12, y: plcRatioY + 0.24, w: colW - 0.24, h: 0.34,
       fontSize: 16, bold: true, color: "0F172A"
     });
-    slide.addText("PLC with active jumpers / Total PLC in Scope", {
+    slide.addText("PLCs with active jumper / Total PLCs in Scope", {
       x: colX + 0.12, y: plcRatioY + 0.60, w: colW - 0.24, h: 0.16,
       fontSize: 8, color: "64748B"
     });
   } else {
-    slide.addText(plcRatioResult.reason || "Belum tersedia", {
+    slide.addText(plcMetricResult.reason || "Belum tersedia", {
       x: colX + 0.12, y: plcRatioY + 0.30, w: colW - 0.24, h: 0.30,
       fontSize: 8.5, color: "E11D48"
     });

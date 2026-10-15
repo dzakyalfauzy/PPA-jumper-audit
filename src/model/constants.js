@@ -2,20 +2,17 @@
  * constants.js
  * Enum terpusat untuk PPA Jumper Audit Automation.
  *
- * Perubahan Phase 5.4 / Revision:
- *   - Menambahkan PLC_BY_AREA: mapping area → daftar PLC resmi.
- *   - Menambahkan JUMPER_STATUS (Normal/Upcoming/Due Soon/Expired), STATUS_COLORS,
- *     dan threshold DUE_SOON_MAX_DAYS / UPCOMING_MAX_DAYS.
- *   - AUTH_STATUS, MOC_STATUS, REMOVAL_STATUS, DUE_DATE_STATUS dipertahankan
- *     untuk kompatibilitas backward; tidak digunakan pada form baru.
+ * Perubahan Revision:
+ *   - Menghapus enum lama: AUTH_STATUS, MOC_STATUS, REMOVAL_STATUS, DUE_DATE_STATUS
+ *   - Menambahkan JUMPER_STATUS 3-status (Active / Expiring Soon / Expired)
+ *   - Menambahkan PLC_BY_AREA mapping resmi dari user
+ *   - Threshold terpusat untuk perhitungan status
  */
 
 "use strict";
 
 // ---------------------------------------------------------------------------
 // AREA IDs
-// Digunakan sebagai key internal di seluruh state, validasi, dan kalkulasi.
-// Label tampilan ditentukan di AREA_LABELS.
 // ---------------------------------------------------------------------------
 export const AREA_IDS = Object.freeze({
   DRYER_CM:  "dryer_cm",
@@ -24,7 +21,6 @@ export const AREA_IDS = Object.freeze({
   CONVERTER: "converter",
 });
 
-/** Daftar ordered area ID yang valid (urutan tampilan slide). */
 export const AREA_ID_LIST = Object.freeze([
   AREA_IDS.DRYER_CM,
   AREA_IDS.KILN_CTS,
@@ -32,7 +28,6 @@ export const AREA_ID_LIST = Object.freeze([
   AREA_IDS.CONVERTER,
 ]);
 
-/** Label tampilan untuk setiap area ID. */
 export const AREA_LABELS = Object.freeze({
   [AREA_IDS.DRYER_CM]:  "Dryer–CM",
   [AREA_IDS.KILN_CTS]:  "Kiln–CTS",
@@ -56,107 +51,14 @@ export const CATEGORY_LIST = Object.freeze([
 ]);
 
 // ---------------------------------------------------------------------------
-// AUTHORIZATION STATUS
-// [PLACEHOLDER] — OQ-03: nilai resmi belum dikonfirmasi pemilik proses.
-// Nilai internal (key) tidak boleh diubah tanpa memperbarui semua referensi.
-// ---------------------------------------------------------------------------
-export const AUTH_STATUS = Object.freeze({
-  AUTHORIZED:          "Authorized",           // memenuhi BR-04 jika MOC juga memenuhi
-  NOT_AUTHORIZED:      "Not Authorized",       // tidak memenuhi BR-04
-  PENDING_CONFIRMATION:"Pending Confirmation", // tidak dihitung; tampilkan sebagai pending [PLACEHOLDER]
-});
-
-export const AUTH_STATUS_LIST = Object.freeze([
-  AUTH_STATUS.AUTHORIZED,
-  AUTH_STATUS.NOT_AUTHORIZED,
-  AUTH_STATUS.PENDING_CONFIRMATION,
-]);
-
-/**
- * Status yang dianggap memenuhi syarat otorisasi pada BR-04.
- * [OQ-03] Konfirmasi dengan pemilik proses sebelum digunakan pada laporan resmi.
- */
-export const AUTH_STATUS_QUALIFYING = Object.freeze([
-  AUTH_STATUS.AUTHORIZED,
-]);
-
-// ---------------------------------------------------------------------------
-// MOC STATUS
-// [PLACEHOLDER] — OQ-02: nilai resmi belum dikonfirmasi pemilik proses.
-// ---------------------------------------------------------------------------
-export const MOC_STATUS = Object.freeze({
-  APPROVED_COMPLETE: "Approved/Complete", // memenuhi BR-04 jika authorization juga memenuhi
-  NOT_AVAILABLE:     "Not Available",     // kandidat BR-03 jika aktif dan tahun memenuhi
-  PENDING:           "Pending",           // tidak memenuhi BR-04; bukan otomatis Not Available [PLACEHOLDER]
-  NOT_REQUIRED:      "Not Required",      // tidak memenuhi BR-04 kecuali aturan resmi menetapkan lain [PLACEHOLDER]
-});
-
-export const MOC_STATUS_LIST = Object.freeze([
-  MOC_STATUS.APPROVED_COMPLETE,
-  MOC_STATUS.NOT_AVAILABLE,
-  MOC_STATUS.PENDING,
-  MOC_STATUS.NOT_REQUIRED,
-]);
-
-/**
- * Status MOC yang dianggap memenuhi syarat pada BR-04.
- * [OQ-02] Konfirmasi dengan pemilik proses.
- */
-export const MOC_STATUS_QUALIFYING = Object.freeze([
-  MOC_STATUS.APPROVED_COMPLETE,
-]);
-
-/**
- * Status MOC yang menjadikan jumper aktif masuk Remaining Jumper List (BR-03).
- * [OQ-02] Konfirmasi dengan pemilik proses.
- */
-export const MOC_STATUS_REMAINING = Object.freeze([
-  MOC_STATUS.NOT_AVAILABLE,
-]);
-
-// ---------------------------------------------------------------------------
-// REMOVAL STATUS
-// ---------------------------------------------------------------------------
-export const REMOVAL_STATUS = Object.freeze({
-  YES: "Yes",
-  NO:  "No",
-});
-
-export const REMOVAL_STATUS_LIST = Object.freeze([
-  REMOVAL_STATUS.YES,
-  REMOVAL_STATUS.NO,
-]);
-
-// ---------------------------------------------------------------------------
-// DUE DATE CONFIRMATION STATUS
-// Digunakan bersamaan dengan nilai due date; simpan terpisah (§8.6).
-// ---------------------------------------------------------------------------
-export const DUE_DATE_STATUS = Object.freeze({
-  CONFIRMED:   "confirmed",    // memiliki tanggal yang valid
-  UNCONFIRMED: "unconfirmed",  // "Need to confirm the due date" atau setara
-});
-
-export const DUE_DATE_STATUS_LIST = Object.freeze([
-  DUE_DATE_STATUS.CONFIRMED,
-  DUE_DATE_STATUS.UNCONFIRMED,
-]);
-
-// ---------------------------------------------------------------------------
-// WEEK DEFINITIONS & DROPDOWN CHOICES
-// W1 sampai W52
+// WEEK DEFINITIONS — W1 sampai W52 untuk dropdown
 // ---------------------------------------------------------------------------
 export const STANDARD_WEEKS = Object.freeze(
   Array.from({ length: 52 }, (_, i) => `W${i + 1}`)
 );
 
 /**
- * Normalisasi dan parse week label legacy atau modern ke struktur terstandar.
- * Contoh:
- *   "wk40" -> { weekNumber: 40, label: "W40", year: null }
- *   "W40" -> { weekNumber: 40, label: "W40", year: null }
- *   "wk1('25)" -> { weekNumber: 1, label: "W1 ('25)", year: 2025 }
- *   "wk1('26)" -> { weekNumber: 1, label: "W1 ('26)", year: 2026 }
- *   40 -> { weekNumber: 40, label: "W40", year: null }
+ * Normalisasi dan parse week label.
  * @param {string|number} raw
  * @returns {{ weekNumber: number|null, label: string, year: number|null }}
  */
@@ -194,8 +96,6 @@ export function parseWeekLabel(raw) {
 
 /**
  * Sort array week labels secara kronologis.
- * Menjamin tahun (jika ada) dan nomor minggu terurut numerik, bukan alfabetik.
- * Contoh: W9 sebelum W10; W1('25) sebelum W1('26).
  * @param {string[]} labels
  * @param {number} [fallbackYear]
  * @returns {string[]}
@@ -216,28 +116,25 @@ export function sortWeekLabelsChronologically(labels, fallbackYear = 2026) {
 }
 
 // ---------------------------------------------------------------------------
-// MATRIKS GRAFIK
-// 12 kombinasi Area × Category yang harus dirender.
-// Urutan ini menentukan urutan tampilan di slide.
+// MATRIKS GRAFIK — 12 kombinasi Area × Category
 // ---------------------------------------------------------------------------
 export const CHART_MATRIX = Object.freeze(
   AREA_ID_LIST.flatMap((areaId) =>
     CATEGORY_LIST.map((category) => Object.freeze({ areaId, category }))
   )
 );
-// Hasil: 12 object { areaId, category } — index 0–11.
 
 // ---------------------------------------------------------------------------
-// PLC MAPPING PER AREA (Centralized — wajib selaras dengan form dan validasi)
+// PLC MAPPING PER AREA (Official mapping dari user)
 // ---------------------------------------------------------------------------
 export const PLC_BY_AREA = Object.freeze({
   [AREA_IDS.DRYER_CM]: Object.freeze([
     "D1C", "D2C", "D3C", "CMS1", "CM1", "CM BMS", "D1 BMS", "D2 BMS", "D3 BMS",
-    "RCS", "PUGM", "FEED", "500TEAST", "D12 DUST WEST"
+    "RCS", "PUGM", "FEED", "D12 DUST WEST"
   ]),
   [AREA_IDS.KILN_CTS]: Object.freeze([
     "K1", "K2", "K3", "K4", "K5", "K1 BMS", "K2 BMS", "K3 BMS",
-    "CTT 1", "CTT 2", "CTT 3", "CTT 4", "CTT 5",
+    "CTT 1", "CTT2", "CTT3", "CTT4", "CTT5",
     "CC1", "CC2", "CC3", "CC4", "CC5", "CC5A",
     "DOS 1", "DOS 2", "KGS", "SLCU", "HSFO1", "HSFO2"
   ]),
@@ -253,31 +150,56 @@ export const PLC_BY_AREA = Object.freeze({
 });
 
 // ---------------------------------------------------------------------------
-// JUMPER STATUS — Derived dari Due Date vs Tanggal Hari Ini
-// Tidak disimpan permanen di state; selalu dikalkulasi ulang saat dibutuhkan.
+// AUTHORIZATION TYPE — klasifikasi otorisasi jumper
+// ---------------------------------------------------------------------------
+export const AUTH_TYPE = Object.freeze({
+  AUTHORIZED:     "Authorized",
+  NON_AUTHORIZED: "Non-Authorized",
+});
+
+export const AUTH_TYPE_LIST = Object.freeze([
+  AUTH_TYPE.AUTHORIZED,
+  AUTH_TYPE.NON_AUTHORIZED,
+]);
+
+// ---------------------------------------------------------------------------
+// JUMPER STATUS — 3-status system berdasarkan Due Date
 // ---------------------------------------------------------------------------
 export const JUMPER_STATUS = Object.freeze({
-  NORMAL:   "Normal",
-  UPCOMING: "Upcoming",
-  DUE_SOON: "Due Soon",
-  EXPIRED:  "Expired",
+  ACTIVE:         "Active",          // Due Date > 7 hari ke depan (8+ hari)
+  EXPIRING_SOON:  "Expiring Soon",   // Due Date hari ini sampai 7 hari ke depan (0-7 hari)
+  EXPIRED:        "Expired",         // Due Date < hari ini
 });
+
+export const JUMPER_STATUS_LIST = Object.freeze([
+  JUMPER_STATUS.ACTIVE,
+  JUMPER_STATUS.EXPIRING_SOON,
+  JUMPER_STATUS.EXPIRED,
+]);
 
 /**
  * Threshold hari (perbandingan kalender, bukan timestamp):
- *   - diff < 0                 → Expired
- *   - 0   .. DUE_SOON_MAX_DAYS → Due Soon (termasuk Due Date hari ini)
- *   - +1  .. UPCOMING_MAX_DAYS → Upcoming
- *   - >  UPCOMING_MAX_DAYS     → Normal
+ *   - diff < 0                    → Expired
+ *   - 0   .. EXPIRING_SOON_MAX_DAYS → Expiring Soon (inklusif hari ini)
+ *   - > EXPIRING_SOON_MAX_DAYS    → Active
  * Satu lokasi terpusat — dipakai form, preview, PPTX, dan validasi.
  */
-export const DUE_SOON_MAX_DAYS = 7;
-export const UPCOMING_MAX_DAYS = 30;
+export const EXPIRING_SOON_MAX_DAYS = 7;
 
 /** Palet warna setiap status jumper — digunakan di UI, Preview, dan PPTX. */
 export const STATUS_COLORS = Object.freeze({
-  [JUMPER_STATUS.NORMAL]:   { bg: "#DCFCE7", text: "#166534" },
-  [JUMPER_STATUS.UPCOMING]: { bg: "#DBEAFE", text: "#1D4ED8" },
-  [JUMPER_STATUS.DUE_SOON]: { bg: "#FEF3C7", text: "#92400E" },
-  [JUMPER_STATUS.EXPIRED]:  { bg: "#FEE2E2", text: "#991B1B" },
+  [JUMPER_STATUS.ACTIVE]:         { bg: "#DCFCE7", text: "#166534" }, // light green
+  [JUMPER_STATUS.EXPIRING_SOON]:  { bg: "#FEF3C7", text: "#92400E" }, // light amber
+  [JUMPER_STATUS.EXPIRED]:        { bg: "#FEE2E2", text: "#991B1B" }, // light red
 });
+
+// ---------------------------------------------------------------------------
+// WARNA KATEGORI UNTUK CHART
+// ---------------------------------------------------------------------------
+export const CATEGORY_COLORS = Object.freeze({
+  Shortbranches: { base: "#BFBFBF", planBg: "rgba(191, 191, 191, 0.75)", planBorder: "#8C8C8C", actual: "#A52A98", actualPoint: "#A52A98" },
+  Forces:        { base: "#008577", planBg: "rgba(0, 133, 119, 0.75)", planBorder: "#005a50", actual: "#A52A98", actualPoint: "#A52A98" },
+  AFI:           { base: "#00B0F0", planBg: "rgba(0, 176, 240, 0.75)", planBorder: "#008dbf", actual: "#A52A98", actualPoint: "#A52A98" },
+});
+
+export const ACTUAL_COLOR = "#A52A98";

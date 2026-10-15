@@ -1,6 +1,6 @@
 /**
  * app.js
- * Entry point aplikasi PPA Jumper Audit Automation.
+ * Entry point aplikasi PPA Jumper Audit Automation (revisi).
  *
  * Tanggung jawab:
  *   - Mount semua form section ke DOM.
@@ -25,7 +25,7 @@ import { APP_CONFIG } from "../model/config.js";
 import { areaSummaryDiscrepancy } from "../logic/selectors.js";
 import { mountFormReportInfo, setDiscrepancyWarnings } from "./formReportInfo.js";
 import { mountFormWeeklyChart, refreshFormWeeklyChart } from "./formWeeklyChart.js";
-import { mountFormRegister } from "./formRegister.js";
+import { mountFormRegister, refreshFormRegister } from "./formRegister.js";
 import { renderSlidePreview } from "../preview/slidePreview.js";
 import { exportToPowerPoint } from "../export/pptxExporter.js";
 
@@ -94,14 +94,18 @@ function _onStateChange() {
   // 1. Discrepancy warnings untuk area summary
   _updateDiscrepancyWarnings(state);
 
-  // 2. Refresh weekly chart form (week labels mungkin berubah)
+  // 2. Refresh weekly chart form
   const wcContainer = document.getElementById("section-weekly-chart");
   if (wcContainer) refreshFormWeeklyChart(wcContainer);
 
-  // 3. Update global status panel
+  // 3. Refresh register form (for search, etc)
+  const regContainer = document.getElementById("section-register");
+  if (regContainer) refreshFormRegister(regContainer);
+
+  // 4. Update global status panel
   _updateStatusPanel(state);
 
-  // 4. Render / update slide preview
+  // 5. Render / update slide preview
   _updatePreview(state);
 }
 
@@ -110,8 +114,7 @@ function _onStateChange() {
 // ---------------------------------------------------------------------------
 
 function _updateDiscrepancyWarnings(state) {
-  const appConfig = _buildAppConfig(state);
-  const disc = areaSummaryDiscrepancy(state.areaSummary, state.jumperRegister, appConfig);
+  const disc = areaSummaryDiscrepancy(state.areaSummary, state.jumperRegister);
   const riContainer = document.getElementById("section-report-info");
   if (riContainer) setDiscrepancyWarnings(disc.warnings, riContainer);
 }
@@ -127,7 +130,7 @@ function _updateStatusPanel(state) {
   const result      = validateFullState(state);
   const hasErrors   = result.errors.length > 0;
   const hasWarnings = result.warnings.length > 0;
-  
+
   const exportPptxBtn = document.getElementById("btn-export-pptx");
   if (exportPptxBtn) {
     exportPptxBtn.disabled = hasErrors;
@@ -206,16 +209,6 @@ function _updatePreview(state) {
 // HELPERS
 // ---------------------------------------------------------------------------
 
-function _buildAppConfig(state) {
-  return {
-    ...APP_CONFIG,
-    reporting: {
-      identificationYearFilter: state.config.identificationYearFilter ?? null,
-    },
-    discrepancyWarning: APP_CONFIG.discrepancyWarning,
-  };
-}
-
 function _esc(str) {
-  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

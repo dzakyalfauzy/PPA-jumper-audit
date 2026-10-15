@@ -18,21 +18,23 @@
 
 import { canvasId, CATEGORY_COLORS, ACTUAL_COLOR } from "../preview/chartRenderer.js";
 import { renderSlidePreview } from "../preview/slidePreview.js";
-import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, CHART_MATRIX } from "../model/constants.js";
 import {
-  remainingJumperList,
-  authorizedMocCount,
-  removedJumperCount,
-  remainingPlcRatio,
+  AREA_IDS,
+  AREA_ID_LIST,
+  AREA_LABELS,
+  CATEGORIES,
+  CATEGORY_LIST,
+  CHART_MATRIX,
+  JUMPER_STATUS,
+  EXPIRING_SOON_MAX_DAYS,
+  AUTH_TYPE,
+} from "../model/constants.js";
+import {
+  plcsWithoutActiveJumpers,
   jumperCountPerPlc,
 } from "../logic/selectors.js";
 import { getAllChartSeries, getChartKey } from "../logic/chartData.js";
 import { createJumperRecord } from "../model/state.js";
-import {
-  AREA_IDS, CATEGORIES,
-  AUTH_STATUS, MOC_STATUS,
-  REMOVAL_STATUS, DUE_DATE_STATUS,
-} from "../model/constants.js";
 
 // ---------------------------------------------------------------------------
 // HELPER
@@ -40,21 +42,14 @@ import {
 
 function makeRecord(overrides = {}) {
   return createJumperRecord({
-    jumperId:            "J-001",
-    plc:                 "PLC-A",
-    areaId:              AREA_IDS.DRYER_CM,
-    category:            CATEGORIES.AFI,
-    description:         "Test",
-    installedWeekOrDate: "W35-2026",
-    authorizationStatus: AUTH_STATUS.AUTHORIZED,
-    mocStatus:           MOC_STATUS.APPROVED_COMPLETE,
-    identificationYear:  2026,
-    removalStatus:       REMOVAL_STATUS.NO,
-    removalWeek:         null,
-    removalYear:         null,
-    dueDateStatus:       DUE_DATE_STATUS.CONFIRMED,
-    dueDate:             "2026-12-31",
-    quantity:            1,
+    jumperId:          "001",
+    plc:               "PLC-A",
+    areaId:            AREA_IDS.DRYER_CM,
+    category:          CATEGORIES.AFI,
+    authorizationType: AUTH_TYPE.AUTHORIZED,
+    description:       "Test",
+    installedDate:     "2026-03-07",
+    dueDate:           "2026-12-31",
     ...overrides,
   });
 }
@@ -184,152 +179,73 @@ describe("CHART_MATRIX — 12 kombinasi area × category", () => {
 
 describe("Integrasi kalkulasi preview (tanpa DOM)", () => {
 
-  const appConfigWith2026 = {
-    reporting: { identificationYearFilter: 2026 },
-    discrepancyWarning: { enabled: true, basis: null },
-  };
-  const appConfigNull = {
-    reporting: { identificationYearFilter: null },
-    discrepancyWarning: { enabled: true, basis: null },
-  };
-
-  // ── Remaining Jumper List ──
-  test("remainingJumperList ok:false jika identificationYearFilter null (OQ-01)", () => {
-    const result = remainingJumperList([], appConfigNull);
+  // ── PLCs Without Active Jumpers (metric terbalik) ──
+  test("plcsWithoutActiveJumpers ok:false jika totalPlcInScope null", () => {
+    const result = plcsWithoutActiveJumpers([], null);
     expect(result.ok).toBe(false);
-    expect(result.reason).toMatch(/OQ-01/);
+    expect(result.percentage).toBeNull();
   });
 
-  test("remainingJumperList ok:true dengan filter dikonfigurasi — record yang cocok masuk", () => {
-    const record = makeRecord({
-      removalStatus: REMOVAL_STATUS.NO,
-      mocStatus: MOC_STATUS.NOT_AVAILABLE,
-      identificationYear: 2026,
-    });
-    const result = remainingJumperList([record], appConfigWith2026);
-    expect(result.ok).toBe(true);
-    expect(result.data).toHaveLength(1);
-  });
-
-  test("remainingJumperList ok:true — register kosong mengembalikan data kosong", () => {
-    const result = remainingJumperList([], appConfigWith2026);
-    expect(result.ok).toBe(true);
-    expect(result.data).toHaveLength(0);
-  });
-
-  // ── Authorized/MoC ──
-  test("authorizedMocCount mengembalikan placeholderWarning yang mengandung OQ", () => {
-    const { placeholderWarning } = authorizedMocCount([]);
-    expect(placeholderWarning).toMatch(/OQ/);
-  });
-
-  test("authorizedMocCount = 0 jika register kosong", () => {
-    expect(authorizedMocCount([]).count).toBe(0);
-  });
-
-  test("authorizedMocCount menghitung Quantity, bukan jumlah record", () => {
-    const r1 = makeRecord({ jumperId: "J-1", quantity: 3, authorizationStatus: AUTH_STATUS.AUTHORIZED, mocStatus: MOC_STATUS.APPROVED_COMPLETE });
-    const r2 = makeRecord({ jumperId: "J-2", quantity: 2, authorizationStatus: AUTH_STATUS.AUTHORIZED, mocStatus: MOC_STATUS.APPROVED_COMPLETE });
-    expect(authorizedMocCount([r1, r2]).count).toBe(5);
-  });
-
-  // ── Removed Jumper ──
-  test("removedJumperCount = 0 jika tidak ada label minggu laporan", () => {
-    const record = makeRecord({ removalStatus: REMOVAL_STATUS.YES, removalWeek: "W40", removalYear: 2026, quantity: 2 });
-    // reportingWeekLabel = null → count = 0 (slidePreview tidak memanggil removedJumperCount)
-    const { count } = removedJumperCount([record], 2026, null);
-    expect(count).toBe(0); // null label → tidak cocok dengan "W40"
-  });
-
-  test("removedJumperCount benar dengan label eksplisit", () => {
-    const record = makeRecord({ removalStatus: REMOVAL_STATUS.YES, removalWeek: "W40", removalYear: 2026, quantity: 3 });
-    const { count } = removedJumperCount([record], 2026, "W40");
-    expect(count).toBe(3);
-  });
-
-  // ── Regression Tests: Konsistensi Periode Laporan ──
-  test("removedJumperCount mencocokkan removalWeek baik W40, '40', maupun wk40 secara konsisten", () => {
+  test("plcsWithoutActiveJumpers benar: 2 PLC aktif unik dari 10 = 80% tanpa jumper", () => {
     const records = [
-      makeRecord({ jumperId: "J-R1", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W40", removalYear: 2026, quantity: 1 }),
-      makeRecord({ jumperId: "J-R2", removalStatus: REMOVAL_STATUS.YES, removalWeek: "40", removalYear: 2026, quantity: 2 }),
-      makeRecord({ jumperId: "J-R3", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W52", removalYear: 2026, quantity: 5 }), // beda minggu
+      makeRecord({ jumperId: "001", plc: "PLC-A", dueDate: "2026-12-31" }), // Active (> 7 days)
+      makeRecord({ jumperId: "002", plc: "PLC-B", dueDate: "2026-12-31" }), // Active
+      makeRecord({ jumperId: "003", plc: "PLC-A", dueDate: "2026-12-31" }), // duplicate PLC-A
     ];
-    // Periode eksplisit W40
-    const resW40 = removedJumperCount(records, 2026, "W40");
-    expect(resW40.count).toBe(3); // J-R1 (1) + J-R2 (2)
-
-    // Periode eksplisit W52
-    const resW52 = removedJumperCount(records, 2026, "W52");
-    expect(resW52.count).toBe(5);
-  });
-
-  test("Slide preview mengikat period label dan removed count ke Reporting Week terpilih (W40), bukan label terakhir weekLabels", () => {
-    // Simulasi state dengan reportingWeek = 40, tetapi weekLabels berisi sampai W52
-    const state = {
-      config: {
-        title: "PPA Jumper Audit",
-        plantArea: "Process Plant Area",
-        reportingYear: 2026,
-        reportingWeek: 40,
-        weekLabels: ["W38", "W39", "W40", "W52"], // label terakhir W52
-        totalPlcInScope: 69,
-        identificationYearFilter: 2026,
-      },
-      areaSummary: [],
-      weeklyChartData: [],
-      jumperRegister: [
-        makeRecord({ jumperId: "J-R40", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W40", removalYear: 2026, quantity: 2 }),
-        makeRecord({ jumperId: "J-R52", removalStatus: REMOVAL_STATUS.YES, removalWeek: "W52", removalYear: 2026, quantity: 7 }),
-      ],
-    };
-
-    // Panggil renderSlidePreview ke elemen DOM virtual
-    const container = { innerHTML: "" };
-    renderSlidePreview(container, state, null);
-
-    // Header harus menampilkan Period: W40, BUKAN W52
-    expect(container.innerHTML).toContain("Period: W40");
-    expect(container.innerHTML).not.toContain("Period: W52");
-
-    // Kartu ringkasan status (Normal/Due Soon/Expired) DIHAPUS dari slide.
-    // Kata "Normal"/"Due Soon"/"Expired" hanya boleh muncul di legenda teks & kolom Status.
-    expect(container.innerHTML).not.toContain("slide-kpi-row");
-    expect(container.innerHTML).not.toContain("slide-kpi-box");
-    expect(container.innerHTML).toContain("Jumper Update Table");
-    // Legenda aturan status 4-tier tetap tampil
-    expect(container.innerHTML).toContain("Upcoming");
-    expect(container.innerHTML).toContain("Due Soon (0–7 hari)");
-  });
-
-  // ── PLC Ratio ──
-  test("remainingPlcRatio ok:false jika totalPlcInScope null", () => {
-    const result = remainingPlcRatio([], null);
-    expect(result.ok).toBe(false);
-    expect(result.ratio).toBeNull();
-  });
-
-  test("remainingPlcRatio benar: 2 PLC aktif dari 10 = 0.2", () => {
-    const records = [
-      makeRecord({ jumperId: "J-1", plc: "PLC-A" }),
-      makeRecord({ jumperId: "J-2", plc: "PLC-B" }),
-      makeRecord({ jumperId: "J-3", plc: "PLC-A" }), // duplikat PLC-A
-    ];
-    const result = remainingPlcRatio(records, 10);
+    const result = plcsWithoutActiveJumpers(records, 10, new Date(2026, 5, 15));
     expect(result.ok).toBe(true);
-    expect(result.activePlcCount).toBe(2);
-    expect(result.ratio).toBeCloseTo(0.2);
+    expect(result.plcsWithActive).toBe(2);
+    expect(result.plcsWithoutActive).toBe(8);
+    expect(result.percentage).toBeCloseTo(80);
+  });
+
+  test("plcsWithoutActiveJumpers: Expired record tetap dihitung sebagai aktif", () => {
+    const records = [
+      makeRecord({ jumperId: "001", plc: "PLC-A", dueDate: "2020-01-01" }), // Expired
+    ];
+    const result = plcsWithoutActiveJumpers(records, 10, new Date(2026, 5, 15));
+    expect(result.plcsWithActive).toBe(1);
+    expect(result.plcsWithoutActive).toBe(9);
+  });
+
+  test("plcsWithoutActiveJumpers: Expiring Soon (≤ 7 hari) dihitung sebagai aktif", () => {
+    const records = [
+      makeRecord({ jumperId: "001", plc: "PLC-A", dueDate: "2026-06-20" }), // 5 days from 2026-06-15
+    ];
+    const result = plcsWithoutActiveJumpers(records, 10, new Date(2026, 5, 15));
+    expect(result.plcsWithActive).toBe(1);
+    expect(result.plcsWithoutActive).toBe(9);
+  });
+
+  test("plcsWithoutActiveJumpers: record tanpa Due Date tidak dihitung aktif", () => {
+    const records = [
+      makeRecord({ jumperId: "001", plc: "PLC-A", dueDate: null }),
+    ];
+    const result = plcsWithoutActiveJumpers(records, 10, new Date(2026, 5, 15));
+    expect(result.plcsWithActive).toBe(0);
+    expect(result.plcsWithoutActive).toBe(10);
   });
 
   // ── jumperCountPerPlc ──
   test("jumperCountPerPlc menghasilkan byCategory dengan semua 3 kategori", () => {
-    const record = makeRecord({ plc: "PLC-X", category: CATEGORIES.AFI, quantity: 4 });
+    const record = makeRecord({ plc: "PLC-X", category: CATEGORIES.AFI });
     const result = jumperCountPerPlc([record]);
     expect(result).toHaveLength(1);
     expect(result[0].byCategory).toHaveProperty(CATEGORIES.AFI);
     expect(result[0].byCategory).toHaveProperty(CATEGORIES.FORCES);
     expect(result[0].byCategory).toHaveProperty(CATEGORIES.SHORTBRANCHES);
-    expect(result[0].byCategory[CATEGORIES.AFI]).toBe(4);
+    expect(result[0].byCategory[CATEGORIES.AFI]).toBe(1);
     expect(result[0].byCategory[CATEGORIES.FORCES]).toBe(0);
+    expect(result[0].byCategory[CATEGORIES.SHORTBRANCHES]).toBe(0);
+  });
+
+  test("jumperCountPerPlc: record aktif dan expired dihitung", () => {
+    const records = [
+      makeRecord({ jumperId: "001", plc: "PLC-A", category: CATEGORIES.AFI, dueDate: "2026-12-31" }), // Active
+      makeRecord({ jumperId: "002", plc: "PLC-A", category: CATEGORIES.AFI, dueDate: "2020-01-01" }), // Expired
+    ];
+    const result = jumperCountPerPlc(records, new Date(2026, 5, 15));
+    expect(result[0].byCategory[CATEGORIES.AFI]).toBe(2);
   });
 
   // ── Chart series integrasi ──
@@ -358,6 +274,251 @@ describe("Integrasi kalkulasi preview (tanpa DOM)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// TEST: renderSlidePreview — integrasi HTML (tanpa Chart.js)
+// ---------------------------------------------------------------------------
+
+describe("renderSlidePreview — layout revisi (tanpa DOM browser)", () => {
+
+  const previewState = {
+    config: {
+      title: "PPA JUMPER AUDIT WEEK-40",
+      plantArea: "Process Plant Area",
+      reportingYear: 2026,
+      reportingWeek: 40,
+      totalPlcInScope: 69,
+    },
+    areaSummary: [],
+    weeklyChartData: [],
+    jumperRegister: [
+      makeRecord({ jumperId: "001", plc: "D3C", areaId: AREA_IDS.DRYER_CM, dueDate: "2099-12-31" }),
+      makeRecord({ jumperId: "002", plc: "K2",  areaId: AREA_IDS.KILN_CTS, dueDate: "2000-01-01" }),
+    ],
+  };
+
+  function render(state) {
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+    return container.innerHTML;
+  }
+
+  test("judul tabel baru tampil, judul lama tidak ada", () => {
+    const html = render(previewState);
+    expect(html).toContain("Total Jumper With MOC/Authorized Jumper");
+    expect(html).not.toContain("Jumper Update Table");
+    expect(html).toContain("Jumper Without MOC/Authorized Jumper");
+    expect(html).not.toContain("Remaining Jumper List");
+  });
+
+  test("kartu Area Summary dan baris KPI status lama dihapus", () => {
+    const html = render(previewState);
+    expect(html).not.toContain("slide-kpi-row");
+    expect(html).not.toContain("slide-kpi-box");
+  });
+
+  test("header menampilkan Week · Year dari config (bukan chip weekLabels)", () => {
+    const html = render(previewState);
+    expect(html).toContain("Week 40 · 2026");
+    expect(html).not.toContain("Chart Week Labels");
+  });
+
+  test("metric PLC: pembilang jumlah PLC dengan jumper aktif / total PLC", () => {
+    const html = render(previewState);
+    // 2 record: 1 Active (D3C), 1 Expired (K2) → 2 PLC dengan jumper aktif
+    // Fraction: 2 / 69
+    expect(html).toContain("2 / 69");
+    expect(html).toContain("PLCs With Active Jumper / Total PLCs");
+    expect(html).toContain("PLCs with active jumper / Total PLCs in Scope");
+  });
+
+  test("legenda aturan status 3-status tampil (7 hari)", () => {
+    const html = render(previewState);
+    expect(html).toContain("Expiring Soon (0–7 hari)");
+    expect(html).toContain("Active (> 7 hari)");
+    expect(EXPIRING_SOON_MAX_DAYS).toBe(7);
+  });
+
+  test("kolom tabel: ID, PLC, Area, Category, Installed, Due Date, Status", () => {
+    const html = render(previewState);
+    for (const th of ["<th>ID</th>", "<th>PLC</th>", "<th>Area</th>", "<th>Category</th>",
+                      "<th>Installed</th>", "<th>Due Date</th>", "<th>Status</th>"]) {
+      expect(html).toContain(th);
+    }
+  });
+
+  test("status badge dihitung dari Due Date (Active & Expired tampil)", () => {
+    const html = render(previewState);
+    // Badge warna STATUS_COLORS dirender inline pada kolom Status
+    expect(html).toContain("background:#DCFCE7"); // Active
+    expect(html).toContain("background:#FEE2E2"); // Expired
+    expect(html).toContain(JUMPER_STATUS.ACTIVE);
+    expect(html).toContain(JUMPER_STATUS.EXPIRED);
+  });
+
+  test("record tanpa Due Date menampilkan em-dash, bukan status Active", () => {
+    const state = {
+      ...previewState,
+      jumperRegister: [makeRecord({ jumperId: "009", dueDate: null })],
+    };
+    const html = render(state);
+    expect(html).toContain('<td class="ut-due"></td>');
+    expect(html).toContain('class="slide-empty"');
+    // Tidak ada badge warna status sama sekali
+    expect(html).not.toContain("#DCFCE7"); // Active
+    expect(html).not.toContain("#FEF3C7"); // Expiring Soon
+    expect(html).not.toContain("#FEE2E2"); // Expired
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TEST: PHASE 3.1 — Report Classification: Authorized vs Non-Authorized
+// ---------------------------------------------------------------------------
+
+describe("PHASE 3.1 — Report Classification: Authorized vs Non-Authorized in Slide Preview", () => {
+  const regressionRecords = [
+    makeRecord({ jumperId: "001", authorizationType: AUTH_TYPE.AUTHORIZED }),
+    makeRecord({ jumperId: "002", authorizationType: AUTH_TYPE.AUTHORIZED }),
+    makeRecord({ jumperId: "003", authorizationType: AUTH_TYPE.NON_AUTHORIZED }),
+    makeRecord({ jumperId: "004", authorizationType: null }),
+  ];
+
+  const state = {
+    config: {
+      title: "PPA Report",
+      plantArea: "PP Area",
+      reportingYear: 2026,
+      reportingWeek: 40,
+      totalPlcInScope: 69,
+    },
+    areaSummary: [],
+    weeklyChartData: [],
+    jumperRegister: regressionRecords,
+  };
+
+  test("Authorized table contains only IDs 001 and 002", () => {
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+    const html = container.innerHTML;
+
+    // Authorized table is in slide-bottom-left (.slide-update-table)
+    const updateTableMatch = html.match(/<table class="slide-update-table">([\s\S]*?)<\/table>/);
+    expect(updateTableMatch).not.toBeNull();
+    const updateTableHtml = updateTableMatch[1];
+
+    expect(updateTableHtml).toContain("001");
+    expect(updateTableHtml).toContain("002");
+    expect(updateTableHtml).not.toContain("003");
+    expect(updateTableHtml).not.toContain("004");
+  });
+
+  test("Non-Authorized section contains only ID 003 and confirms Authorized records do not appear", () => {
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+    const html = container.innerHTML;
+
+    // Non-Authorized section is in slide-remaining-panel
+    const remainingPanelMatch = html.match(/<div class="slide-remaining-panel">([\s\S]*?)<div class="slide-plc-section">/);
+    expect(remainingPanelMatch).not.toBeNull();
+    const remainingPanelHtml = remainingPanelMatch[1];
+
+    expect(remainingPanelHtml).toContain("003");
+    expect(remainingPanelHtml).not.toContain("001");
+    expect(remainingPanelHtml).not.toContain("002");
+    expect(remainingPanelHtml).not.toContain("004");
+  });
+
+  test("Badge count on Non-Authorized section reflects only Non-Authorized records (1)", () => {
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+    const html = container.innerHTML;
+
+    expect(html).toContain('<span class="slide-count-badge">1</span>');
+  });
+
+  test("Record belum diklasifikasikan (004) tidak muncul di preview dan tidak ada teks Unclassified", () => {
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+    const html = container.innerHTML;
+
+    expect(html).not.toContain("004");
+    expect(html).not.toContain("Unclassified");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TEST: Konsistensi KPI Metrik PLC antara Pure Selector dan Web Preview
+// ---------------------------------------------------------------------------
+
+describe("Konsistensi KPI Metrik PLC antara Pure Selector dan Web Preview", () => {
+  test("Nilai fraction dan persentase di web preview konsisten dengan pure selector", () => {
+    const records = [
+      makeRecord({ jumperId: "001", plc: "PLC-A", dueDate: "2099-12-31" }), // Active
+      makeRecord({ jumperId: "002", plc: "PLC-A", dueDate: "2020-01-01" }), // Expired (tetap aktif, PLC-A dihitung 1x)
+      makeRecord({ jumperId: "003", plc: "PLC-B", dueDate: "2026-06-20" }), // Expiring Soon (PLC-B)
+      makeRecord({ jumperId: "004", plc: "PLC-C", dueDate: null }),         // No Due Date (tidak aktif)
+    ];
+
+    const state = {
+      config: {
+        title: "KPI Consistency Audit",
+        plantArea: "PP Area",
+        reportingYear: 2026,
+        reportingWeek: 40,
+        totalPlcInScope: 10,
+      },
+      areaSummary: [],
+      weeklyChartData: [],
+      jumperRegister: records,
+    };
+
+    // 1. Pure selector
+    const selectorResult = plcsWithoutActiveJumpers(records, 10, new Date(2026, 5, 15));
+    expect(selectorResult.ok).toBe(true);
+    expect(selectorResult.plcsWithActive).toBe(2);
+    expect(selectorResult.plcsWithoutActive).toBe(8);
+    expect(selectorResult.percentage).toBe(80);
+
+    // 2. Web preview HTML
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+    const html = container.innerHTML;
+
+    // Header label
+    expect(html).toContain("PLCs With Active Jumper / Total PLCs");
+    // Fraction pembilang jumlah PLC aktif (2 / 10)
+    expect(html).toContain("2 / 10");
+    // Persentase (80.0%)
+    expect(html).toContain("80.0%");
+    // Sub-label
+    expect(html).toContain("PLCs with active jumper / Total PLCs in Scope");
+  });
+
+  test("Ketika totalPlcInScope tidak valid (0 atau null), preview menampilkan reason dengan konsisten", () => {
+    const state = {
+      config: {
+        title: "Invalid PLC Scope",
+        plantArea: "PP Area",
+        reportingYear: 2026,
+        reportingWeek: 40,
+        totalPlcInScope: 0,
+      },
+      areaSummary: [],
+      weeklyChartData: [],
+      jumperRegister: [],
+    };
+
+    const selectorResult = plcsWithoutActiveJumpers([], 0);
+    expect(selectorResult.ok).toBe(false);
+    expect(selectorResult.percentage).toBeNull();
+
+    const container = { innerHTML: "" };
+    renderSlidePreview(container, state, null);
+    const html = container.innerHTML;
+
+    expect(html).toContain("Total PLC in Scope harus bilangan bulat positif");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // DOKUMENTASI: Manual Test yang Diperlukan di Browser
 // ---------------------------------------------------------------------------
 
@@ -365,7 +526,7 @@ describe("Integrasi kalkulasi preview (tanpa DOM)", () => {
  * Manual Test Checklist — Buka http://localhost:3000 (npx serve .)
  *
  * MT-01: Preview awal
- *   - Buka aplikasi. Section "Preview" menampilkan placeholder "Isi form di atas...".
+ *   - Buka aplikasi. Section "Preview" menampilkan placeholder.
  *   - Setelah isi Report Title → preview update otomatis.
  *
  * MT-02: 12 Grafik
@@ -378,23 +539,22 @@ describe("Integrasi kalkulasi preview (tanpa DOM)", () => {
  *   - Tambah baris dengan Plan=0, Actual=0 → grafik tampilkan titik di Y=0.
  *   - Minggu yang tidak ada data → tidak ada titik (gap, bukan 0).
  *
- * MT-04: Remaining Jumper List
- *   - identificationYearFilter kosong → panel menampilkan "[OQ-01] belum dikonfigurasi".
- *   - Isi identificationYearFilter → panel menampilkan daftar yang memenuhi filter.
+ * MT-04: Jumper Without MOC/Authorized Jumper
+ *   - Panel menampilkan daftar dari Jumper Authorized Register.
+ *   - Note: Filter MOC/Authorization tidak tersedia (fields removed).
  *
  * MT-05: Overflow Warning
- *   - Tambah lebih dari 12 record dengan Removal=No, MOC=Not Available, ID Year = filter.
+ *   - Tambah lebih dari 12 record.
  *   - Preview menampilkan warning overflow; hanya 12 item pertama ditampilkan.
  *
- * MT-06: PLC Ratio
+ * MT-06: PLCs Without Active Jumper / Total PLCs
  *   - totalPlcInScope kosong → panel menampilkan "belum tersedia".
- *   - Isi totalPlcInScope → rasio muncul.
+ *   - Isi totalPlcInScope → rasio muncul dengan persentase.
  *
- * MT-07: Jumper Update Table
+ * MT-07: Total Jumper With MOC/Authorized Jumper
  *   - Tambah beberapa record jumper.
- *   - Tabel "Jumper Update Table" di preview menampilkan kolom PLC, Update Jumper,
- *     Installed, Authorized Jumper, Due Date.
- *   - Due Date "unconfirmed" menampilkan "Perlu konfirmasi", bukan tanggal palsu.
+ *   - Tabel menampilkan kolom PLC, Area, Category, Installed, Due Date, Status.
+ *   - Status dihitung dari Due Date (Active/Expiring Soon/Expired).
  *
  * MT-08: Count per PLC (bar chart)
  *   - Tambah beberapa record aktif dengan PLC berbeda.

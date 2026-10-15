@@ -6,16 +6,16 @@
  *   - Satu sumber data (single source of truth) untuk semua layer: UI, kalkulasi, preview, export.
  *   - Field manual TIDAK pernah ditimpa oleh hasil kalkulasi (BR-01, BR-02, BR-12).
  *   - Nilai null berbeda dari 0 dan string kosong (§1.2, BR-02).
- *   - Urutan weekLabels dipertahankan sesuai input user — tidak di-sort (§9.1, OQ-07).
- *   - Jumper ID harus unik; key Area+Category+Week pada weeklyChartData harus unik (BR-11).
+ *   - Jumper ID harus unik (BR-11).
+ *   - Weekly Chart Data key unik: areaId + category + week (BR-11).
  *
- * Struktur state mengikuti data model PRD §9.
+ * Struktur state mengikuti data model PRD §9 (revisi).
  * Mutasi state hanya melalui fungsi yang diekspor dari file ini.
  */
 
 "use strict";
 
-import { AREA_ID_LIST } from "./constants.js";
+import { AREA_ID_LIST, AUTH_TYPE } from "./constants.js";
 
 // ---------------------------------------------------------------------------
 // STATE AWAL
@@ -29,16 +29,16 @@ import { AREA_ID_LIST } from "./constants.js";
 export function createInitialState() {
   return {
     /**
-     * config — Report Information (Form A §8.1)
-     * Semua field wajib diisi sebelum export diizinkan.
+     * config — Report Information (Form A §8.1 revisi)
+     * weekLabels DIHAPUS — minggu diambil dari weeklyChartData rows.
+     * identificationYearFilter DIHAPUS — tidak digunakan (BR-03 dihapus).
      */
     config: {
       title:            "",    // Report Title — tidak boleh kosong
       plantArea:        "",    // Plant Area — tidak boleh kosong
       reportingYear:    null,  // Integer tahun valid; null = belum diisi
       reportingWeek:    null,  // Integer minggu valid; null = belum diisi
-      weekLabels:       [],    // Array string label minggu; urutan eksplisit sesuai input user
-      totalPlcInScope:  null,  // Integer > 0; null = belum diisi; denominator remaining PLC
+      totalPlcInScope:  null,  // Integer > 0; null = belum diisi; denominator PLC metric
     },
 
     /**
@@ -52,17 +52,22 @@ export function createInitialState() {
     })),
 
     /**
-     * weeklyChartData — Weekly Chart Data (Form A §8.3)
+     * weeklyChartData — Weekly Chart Data (Form A §8.3 revisi)
      * Array of { areaId, category, week, plan, actual }
      * Key unik: areaId + category + week (BR-11).
      * plan/actual: null = belum diisi (BUKAN sama dengan 0) (BR-02).
+     * week: label string (W1-W52) — tidak lagi divalidasi gegen config.weekLabels.
      */
     weeklyChartData: [],
 
     /**
-     * jumperRegister — Jumper Register (Form B §8.4–8.5)
-     * Array of record jumper; lihat createJumperRecord() untuk struktur field.
-     * jumperId harus unik di seluruh array (BR-11).
+     * jumperRegister — Jumper Authorized Register (Form B revisi)
+     * Schema baru (simplified):
+     *   jumperId, plc, areaId, category, description, equipmentTag,
+     *   installedDate (YYYY-MM-DD), dueDate (YYYY-MM-DD | null)
+     * Field lama (authorizationStatus, mocStatus, identificationYear,
+     * removalStatus, removalWeek, removalYear, installedWeekOrDate, quantity, dueDateStatus)
+     * DIHAPUS.
      */
     jumperRegister: [],
   };
@@ -245,7 +250,7 @@ export function deleteJumperRecord(jumperId) {
 }
 
 // ---------------------------------------------------------------------------
-// BASELINE WEEK-40 MASTER DATASET & STORAGE PERSISTENCE (Task F)
+// BASELINE WEEK-40 MASTER DATASET & STORAGE PERSISTENCE
 // ---------------------------------------------------------------------------
 
 export const WEEK_40_BASELINE = Object.freeze({
@@ -254,9 +259,7 @@ export const WEEK_40_BASELINE = Object.freeze({
     plantArea: "Process Plant Area",
     reportingYear: 2026,
     reportingWeek: 40,
-    weekLabels: ["W38", "W39", "W40", "W41", "W42"],
     totalPlcInScope: 69,
-    identificationYearFilter: 2026,
   },
   areaSummary: [
     { areaId: "dryer_cm", jumperCount: 6 },
@@ -319,6 +322,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       equipmentTag: null,
       installedDate: "2026-03-07",
       dueDate: null,
+      authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
       jumperId: "002",
@@ -329,6 +333,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       equipmentTag: null,
       installedDate: "2026-04-18",
       dueDate: null,
+      authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
       jumperId: "003",
@@ -339,6 +344,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       equipmentTag: null,
       installedDate: "2026-07-04",
       dueDate: null,
+      authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
       jumperId: "004",
@@ -349,6 +355,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       equipmentTag: null,
       installedDate: "2026-09-27",
       dueDate: null,
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
     },
     {
       jumperId: "005",
@@ -359,6 +366,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       equipmentTag: null,
       installedDate: "2026-09-27",
       dueDate: null,
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
     },
     {
       jumperId: "006",
@@ -369,11 +377,12 @@ export const WEEK_40_BASELINE = Object.freeze({
       equipmentTag: null,
       installedDate: "2026-09-27",
       dueDate: null,
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
     },
   ],
 });
 
-const STORAGE_KEY = "ppa_jumper_audit_state_v1";
+const STORAGE_KEY = "ppa_jumper_audit_state_v2"; // v2 untuk schema revisi
 
 export function loadPersistedState() {
   try {
@@ -390,11 +399,20 @@ export function loadPersistedState() {
               r.mocStatus !== undefined ||
               r.removalStatus !== undefined ||
               r.installedWeekOrDate !== undefined ||
+              r.identificationYear !== undefined ||
+              r.quantity !== undefined ||
+              r.dueDateStatus !== undefined ||
               !/^\d{3}$/.test(String(r.jumperId || ""))
           );
           if (isLegacy) {
             parsed.jumperRegister = migrateJumperRecords(parsed.jumperRegister);
           }
+          // Migrasi config: hapus weekLabels dan identificationYearFilter jika ada
+          if (parsed.config) {
+            delete parsed.config.weekLabels;
+            delete parsed.config.identificationYearFilter;
+          }
+          parsed.jumperRegister = _ensureAuthorizationType(parsed.jumperRegister);
           _state = parsed;
           savePersistedState();
           return true;
@@ -439,23 +457,25 @@ export function initInitialDataset() {
 // ---------------------------------------------------------------------------
 
 /**
- * Membuat object record jumper dengan semua field terdefinisi.
- * Schema baru (simplified): jumperId, plc, areaId, category, description, equipmentTag,
- *   installedDate (YYYY-MM-DD), dueDate (YYYY-MM-DD | null).
+ * Membuat object record jumper dengan semua field terdefinisi (schema revisi).
+ * Schema: jumperId, plc, areaId, category, description, equipmentTag,
+ *   installedDate (YYYY-MM-DD), dueDate (YYYY-MM-DD | null),
+ *   authorizationType ("Authorized" | "Non-Authorized" | null).
  *
  * @param {Partial<jumperRecord>} overrides
  * @returns {object}
  */
 export function createJumperRecord(overrides = {}) {
   return {
-    jumperId:      null,  // string 3-digit unik, e.g. "001"; wajib
-    plc:           null,  // string dari PLC_BY_AREA; wajib
-    areaId:        null,  // AREA_IDS value; wajib
-    category:      null,  // CATEGORIES value; wajib
-    description:   null,  // string; wajib
-    equipmentTag:  null,  // string; opsional
-    installedDate: null,  // YYYY-MM-DD; wajib
-    dueDate:       null,  // YYYY-MM-DD | null
+    jumperId:          null,
+    plc:               null,
+    areaId:            null,
+    category:          null,
+    description:       null,
+    equipmentTag:      null,
+    installedDate:     null,
+    dueDate:           null,
+    authorizationType: null,
     ...overrides,
   };
 }
@@ -475,7 +495,7 @@ export function nextJumperId(jumperRegister = []) {
 }
 
 /**
- * Migrasi record lama (schema J-001) ke schema baru ("001").
+ * Migrasi record lama (schema J-001 dengan field lama) ke schema baru ("001").
  * Dipanggil saat loadPersistedState menemukan state dengan format lama.
  * @param {object[]} records
  * @returns {object[]}
@@ -497,23 +517,38 @@ export function migrateJumperRecords(records = []) {
       jumperId = String(i + 1).padStart(3, "0");
     }
 
-    // installedDate: legacy menyimpan week string ("Wk10 2026") → null
+    // installedDate: legacy menyimpan week string ("Wk10 2026") atau ISO → ambil ISO jika valid
     const installedDate = isIsoDate(r.installedDate) ? r.installedDate : null;
     // dueDate: hanya valid jika ISO; week string / unconfirmed → null
     const dueDate =
-      isIsoDate(r.dueDate) && r.dueDateStatus !== "unconfirmed"
-        ? r.dueDate
+      isIsoDate(r.dueDate) && r.dueDateStatus !== "unconfirmed" ? r.dueDate : null;
+
+    const authType =
+      r.authorizationType === AUTH_TYPE.AUTHORIZED || r.authorizationType === AUTH_TYPE.NON_AUTHORIZED
+        ? r.authorizationType
         : null;
 
     return {
       jumperId,
-      plc:           r.plc || null,
-      areaId:        r.areaId || null,
-      category:      r.category || null,
-      description:   r.description || null,
-      equipmentTag:  r.equipmentTag || null,
+      plc:               r.plc || null,
+      areaId:            r.areaId || null,
+      category:          r.category || null,
+      description:       r.description || null,
+      equipmentTag:      r.equipmentTag || null,
       installedDate,
       dueDate,
+      authorizationType: authType,
     };
+  });
+}
+
+function _ensureAuthorizationType(records) {
+  if (!Array.isArray(records)) return records;
+  return records.map((r) => {
+    const authType =
+      r.authorizationType === AUTH_TYPE.AUTHORIZED || r.authorizationType === AUTH_TYPE.NON_AUTHORIZED
+        ? r.authorizationType
+        : null;
+    return { ...r, authorizationType: authType };
   });
 }

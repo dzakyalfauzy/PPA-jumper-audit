@@ -1,43 +1,36 @@
 /**
  * selectors.js
- * Fungsi kalkulasi dan agregasi terpusat untuk PPA Jumper Audit Automation.
+ * Fungsi kalkulasi dan agregasi terpusat untuk PPA Jumper Audit Automation (revisi).
  *
  * Prinsip:
  *   - Semua fungsi bersifat PURE: tidak mengubah state sumber, tidak ada side effect.
- *   - Semua kalkulasi menggunakan Quantity untuk agregasi jumlah jumper (BR-04, BR-05, BR-07).
- *   - Penghitungan PLC selalu berdasarkan PLC unik, bukan jumlah record (BR-06, BR-07).
- *   - Jumper aktif = Removal Status = No (asumsi sementara, OQ-06 belum dikonfirmasi).
- *   - Fungsi yang bergantung pada OQ yang belum dikonfirmasi akan mengembalikan
- *     { ok: false, reason, data } agar pemanggil dapat menampilkan status yang jelas.
+ *   - Jumper "aktif" = Due Date status Active atau Expiring Soon (bukan Expired, bukan null).
+ *   - Penghitungan PLC selalu berdasarkan PLC unik, bukan jumlah record.
+ *   - Fungsi yang bergantung pada definisi bisnis yang belum dikonfirmasi akan mengembalikan
+ *     status yang jelas (unavailable) agar pemanggil dapat menampilkan status yang benar.
  *
- * Business Rules yang diimplementasikan:
- *   BR-03  remainingJumperList()
- *   BR-04  authorizedMocCount()
- *   BR-05  removedJumperCount()
- *   BR-06  remainingPlcRatio()
- *   BR-07  jumperCountPerPlc()
- *   BR-12  areaSummaryDiscrepancy() — WARNING ONLY, basis masih OQ
+ * Business Rules yang diimplementasikan (revisi):
+ *   - NEW: getJumperStatus — 3-status dari Due Date
+ *   - NEW: plcsWithoutActiveJumpers — PLC tanpa jumper aktif (metric terbalik)
+ *   - BR-07: jumperCountPerPlc — agregasi per PLC & kategori (jumper aktif saja)
+ *   - BR-12: areaSummaryDiscrepancy — WARNING ONLY
+ *   - Task C: calculateAreaSummariesFromWeeklyChart — Area Summary dari Actual
  *
- * Open Questions yang mempengaruhi kalkulasi:
- *   OQ-01  identificationYearFilter (BR-03)
- *   OQ-02  MOC_STATUS_QUALIFYING dan MOC_STATUS_REMAINING (BR-03, BR-04)
- *   OQ-03  AUTH_STATUS_QUALIFYING (BR-04)
- *   OQ-06  Definisi "jumper aktif" (BR-06, BR-07)
- *   OQ (discrepancy)  basis perbandingan area summary (BR-12)
+ * Dihapus (field dasar tidak ada lagi):
+ *   - BR-03: remainingJumperList (filter Removal/MOC/Identification Year)
+ *   - BR-04: authorizedMocCount (filter Authorization/MOC)
+ *   - BR-05: removedJumperCount (filter Removal Week/Year)
+ *   - OQ-01: identificationYearFilter
  */
 
 "use strict";
 
 import {
   JUMPER_STATUS,
-  DUE_SOON_MAX_DAYS,
-  UPCOMING_MAX_DAYS,
-  REMOVAL_STATUS,
-  AUTH_STATUS_QUALIFYING,
-  MOC_STATUS_QUALIFYING,
-  MOC_STATUS_REMAINING,
+  EXPIRING_SOON_MAX_DAYS,
   AREA_ID_LIST,
   CATEGORY_LIST,
+  AUTH_TYPE,
 } from "../model/constants.js";
 import { APP_CONFIG } from "../model/config.js";
 
@@ -45,8 +38,8 @@ import { APP_CONFIG } from "../model/config.js";
 // DERIVED JUMPER STATUS (dari Due Date)
 // ---------------------------------------------------------------------------
 // Status TIDAK disimpan di state — selalu dihitung ulang dari dueDate + today.
-// Threshold terpusat di DUE_SOON_MAX_DAYS / UPCOMING_MAX_DAYS (constants.js).
-// Valid: jika dueDate null / format tidak valid → BUKAN Normal (null).
+// Threshold terpusat di EXPIRING_SOON_MAX_DAYS (constants.js).
+// Valid: jika dueDate null / format tidak valid → null (bukan Active — data belum lengkap).
 
 /** Parse string YYYY-MM-DD menjadi Date (lokal, tanpa timezone shift), atau null. */
 function parseIsoDate(value) {
@@ -69,20 +62,19 @@ function parseIsoDate(value) {
 
 /** Hitung selisih hari kalender (bukan timestamp) target - today. */
 function calendarDayDiff(target, today) {
-  const a = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-  const b = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return Math.round((a - b) / 86400000);
+  const utcTarget = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
+  const utcToday = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((utcTarget - utcToday) / 86400000);
 }
 
 /**
- * Menentukan status jumper dari Due Date.
+ * Menentukan status jumper dari Due Date (3-status system).
  *
  * Aturan (selisih hari kalender = Due Date - hari ini):
- *   - diff < 0                                → "Expired"
- *   - 0..DUE_SOON_MAX_DAYS (0–7)              → "Due Soon" (termasuk Due Date hari ini)
- *   - (DUE_SOON_MAX_DAYS+1)..UPCOMING_MAX_DAYS (8–30) → "Upcoming"
- *   - > UPCOMING_MAX_DAYS (> 30)              → "Normal"
- *   - dueDate null / tidak valid              → null (BUKAN Normal — data belum lengkap)
+ *   - diff < 0                            → "Expired"
+ *   - 0 .. EXPIRING_SOON_MAX_DAYS (0–7)   → "Expiring Soon" (inklusif hari ini)
+ *   - > EXPIRING_SOON_MAX_DAYS (> 7)      → "Active"
+ *   - dueDate null / tidak valid          → null (BUKAN Active — data belum lengkap)
  *
  * Perbandingan memakai tanggal kalender, bukan timestamp (hindari selisih timezone).
  *
@@ -97,26 +89,24 @@ export function getJumperStatus(dueDate, today = new Date()) {
   const diff = calendarDayDiff(due, today);
 
   if (diff < 0) return JUMPER_STATUS.EXPIRED;
-  if (diff <= DUE_SOON_MAX_DAYS) return JUMPER_STATUS.DUE_SOON;
-  if (diff <= UPCOMING_MAX_DAYS) return JUMPER_STATUS.UPCOMING;
-  return JUMPER_STATUS.NORMAL;
+  if (diff <= EXPIRING_SOON_MAX_DAYS) return JUMPER_STATUS.EXPIRING_SOON;
+  return JUMPER_STATUS.ACTIVE;
 }
 
 /**
  * Menghitung distribusi status seluruh register.
- * Record tanpa Due Date valid dihitung dalam `noDate`, bukan sebagai Normal.
+ * Record tanpa Due Date valid dihitung dalam `noDate`, bukan sebagai Active.
  *
  * @param {object[]} jumperRegister
  * @param {Date} [today]
- * @returns {{ normal: number, upcoming: number, dueSoon: number, expired: number, noDate: number, total: number }}
+ * @returns {{ active: number, expiringSoon: number, expired: number, noDate: number, total: number }}
  */
 export function jumperStatusCounts(jumperRegister, today = new Date()) {
-  const counts = { normal: 0, upcoming: 0, dueSoon: 0, expired: 0, noDate: 0, total: jumperRegister.length };
+  const counts = { active: 0, expiringSoon: 0, expired: 0, noDate: 0, total: jumperRegister.length };
   for (const r of jumperRegister) {
     const s = getJumperStatus(r.dueDate, today);
-    if (s === JUMPER_STATUS.NORMAL) counts.normal++;
-    else if (s === JUMPER_STATUS.UPCOMING) counts.upcoming++;
-    else if (s === JUMPER_STATUS.DUE_SOON) counts.dueSoon++;
+    if (s === JUMPER_STATUS.ACTIVE) counts.active++;
+    else if (s === JUMPER_STATUS.EXPIRING_SOON) counts.expiringSoon++;
     else if (s === JUMPER_STATUS.EXPIRED) counts.expired++;
     else counts.noDate++;
   }
@@ -129,254 +119,121 @@ export function jumperStatusCounts(jumperRegister, today = new Date()) {
 
 /**
  * Mengembalikan true jika record adalah jumper aktif.
- * Schema baru tidak punya field removalStatus — semua record baru = aktif.
- * Record legacy (punya removalStatus) tetap mengikuti aturan lama.
- * @param {object} record
- * @returns {boolean}
- */
-function isActiveJumper(record) {
-  if (record.removalStatus === undefined) return true;
-  return record.removalStatus === REMOVAL_STATUS.NO;
-}
-
-/**
- * Mengembalikan true jika record telah di-removed pada periode (week, year) yang diminta.
- *
- * [OQ-07] Konvensi pencocokan minggu: removalWeek (string label) dibandingkan langsung
- * dengan reportingWeekLabel (string label eksplisit dari pemanggil).
- * Ini menghindari asumsi tentang format label atau konversi integer → label.
- * Pemanggil bertanggung jawab menyediakan label yang tepat.
+ * Sesuai aturan bisnis:
+ * - Active: Due Date > 7 hari
+ * - Expiring Soon: Due Date 0–7 hari
+ * - Expired: Due Date telah lewat
+ * Jumper berstatus Expired tetap dihitung sebagai jumper aktif selama record
+ * jumper tersebut masih ada dan belum dinyatakan tidak aktif melalui aturan bisnis yang berlaku.
+ * Record tanpa Due Date valid (null / kosong / format tidak valid) TIDAK aktif (status belum tersedia).
  *
  * @param {object} record
- * @param {number} reportingYear
- * @param {string} reportingWeekLabel — label string eksplisit minggu laporan (misal "W40")
+ * @param {Date} [today]
  * @returns {boolean}
  */
-function isRemovedInPeriod(record, reportingYear, reportingWeekLabel) {
-  if (record.removalStatus !== REMOVAL_STATUS.YES) return false;
-  if (Number(record.removalYear) !== Number(reportingYear)) return false;
-
-  // Pencocokan fleksibel jika removalWeek dan reportingWeekLabel sama-sama ada
-  if (!record.removalWeek || !reportingWeekLabel) return false;
-  const rwStr = String(record.removalWeek).trim().toUpperCase();
-  const targetStr = String(reportingWeekLabel).trim().toUpperCase();
-  if (rwStr === targetStr) return true;
-
-  // Pencocokan nomor minggu jika keduanya berupa W<number> atau angka
-  const rwNum = parseInt(rwStr.replace(/\D/g, ""), 10);
-  const targetNum = parseInt(targetStr.replace(/\D/g, ""), 10);
-  if (!isNaN(rwNum) && !isNaN(targetNum) && rwNum === targetNum) return true;
-
-  return false;
+function isActiveJumper(record, today = new Date()) {
+  const status = getJumperStatus(record.dueDate, today);
+  return (
+    status === JUMPER_STATUS.ACTIVE ||
+    status === JUMPER_STATUS.EXPIRING_SOON ||
+    status === JUMPER_STATUS.EXPIRED
+  );
 }
 
 // ---------------------------------------------------------------------------
-// BR-03: REMAINING JUMPER LIST
+// PLC METRIC — PLCs With Active Jumper / Total PLCs
 // ---------------------------------------------------------------------------
 
 /**
- * Mengembalikan daftar record yang memenuhi filter Remaining Jumper List (BR-03).
+ * Menghitung metrik PLC: PLCs With Active Jumper / Total PLCs.
  *
- * Filter:
- *   1. Removal Status = No
- *   2. MOC Status = Not Available (atau nilai di MOC_STATUS_REMAINING)
- *   3. Identification Year memenuhi identificationYearFilter dari config
- *
- * Jika identificationYearFilter = null (OQ-01 belum dikonfirmasi):
- *   Mengembalikan { ok: false, reason, data: [] }
- *   JANGAN menganggap hasil filter sebagai final.
- *
- * @param {object[]} jumperRegister
- * @param {object} appConfig — APP_CONFIG atau subset { reporting: { identificationYearFilter } }
- * @returns {{ ok: boolean, reason?: string, data: object[] }}
- */
-export function remainingJumperList(jumperRegister, appConfig = APP_CONFIG) {
-  const yearFilter = appConfig.reporting?.identificationYearFilter;
-
-  // Schema baru (revision Jumper Register): field removalStatus/mocStatus/
-  // identificationYear tidak lagi ada. Jangan hitung — laporkan ambigu.
-  const hasLegacyFields = jumperRegister.some(
-    (r) => r.removalStatus !== undefined || r.mocStatus !== undefined
-  );
-  if (jumperRegister.length > 0 && !hasLegacyFields) {
-    return {
-      ok: false,
-      reason:
-        "Field Removal Status, MOC Status, dan Identification Year dihapus dari " +
-        "register (revisi form). Dasar filter Remaining Jumper List (BR-03) tidak " +
-        "lagi tersedia — definisi pengganti perlu dikonfirmasi pemilik proses.",
-      data: [],
-    };
-  }
-
-  if (yearFilter === null || yearFilter === undefined) {
-    return {
-      ok: false,
-      reason:
-        "[OQ-01] identificationYearFilter belum dikonfigurasi. " +
-        "Remaining Jumper List tidak dapat dihitung. " +
-        "Isi APP_CONFIG.reporting.identificationYearFilter setelah konfirmasi pemilik proses.",
-      data: [],
-    };
-  }
-
-  const data = jumperRegister.filter(
-    (r) =>
-      r.removalStatus === REMOVAL_STATUS.NO &&
-      MOC_STATUS_REMAINING.includes(r.mocStatus) &&
-      r.identificationYear === yearFilter
-  );
-
-  return { ok: true, data };
-}
-
-// ---------------------------------------------------------------------------
-// BR-04: AUTHORIZED / MOC COUNT
-// ---------------------------------------------------------------------------
-
-/**
- * Menghitung total Quantity record yang memenuhi syarat Authorized/MoC (BR-04).
- *
- * Syarat:
- *   - Authorization Status ∈ AUTH_STATUS_QUALIFYING (placeholder OQ-03)
- *   - MOC Status ∈ MOC_STATUS_QUALIFYING (placeholder OQ-02)
- *   - Keduanya harus terpenuhi sekaligus.
- *
- * Catatan: status Pending tidak dihitung (BR-09).
- * [OQ-02, OQ-03] Nilai qualifying masih placeholder.
- *
- * @param {object[]} jumperRegister
- * @returns {{ count: number, records: object[], placeholderWarning: string }}
- */
-export function authorizedMocCount(jumperRegister) {
-  const hasLegacyFields = jumperRegister.some(
-    (r) => r.authorizationStatus !== undefined || r.mocStatus !== undefined
-  );
-
-  if (!hasLegacyFields && jumperRegister.length > 0) {
-    return {
-      count: 0,
-      records: [],
-      placeholderWarning:
-        "Field Authorization Status dan MOC Status dihapus dari register (revisi " +
-        "form). KPI Authorized/MoC tidak dapat dihitung — definisi KPI pengganti " +
-        "perlu dikonfirmasi pemilik proses sebelum ditampilkan dalam laporan.",
-    };
-  }
-
-  const records = jumperRegister.filter(
-    (r) =>
-      AUTH_STATUS_QUALIFYING.includes(r.authorizationStatus) &&
-      MOC_STATUS_QUALIFYING.includes(r.mocStatus)
-  );
-
-  const count = records.reduce((sum, r) => sum + (r.quantity ?? 1), 0);
-
-  return {
-    count,
-    records,
-    placeholderWarning:
-      "[OQ-02, OQ-03] Nilai AUTH_STATUS_QUALIFYING dan MOC_STATUS_QUALIFYING " +
-      "masih placeholder. Konfirmasi dengan pemilik proses sebelum menggunakan " +
-      "angka ini dalam laporan resmi.",
-  };
-}
-
-// ---------------------------------------------------------------------------
-// BR-05: TOTAL REMOVED JUMPER (periode laporan)
-// ---------------------------------------------------------------------------
-
-/**
- * Menghitung total Quantity jumper yang di-removed pada periode laporan (BR-05).
- *
- * Cocok jika:
- *   - Removal Status = Yes
- *   - Removal Year = reportingYear
- *   - Removal Week (string label) cocok tepat dengan reportingWeekLabel
- *
- * [OQ-07] Pemanggil menyediakan reportingWeekLabel sebagai string label eksplisit
- * (misalnya "W40") — tidak ada konversi integer → label di dalam fungsi ini.
- * Ini mencegah asumsi tentang format label minggu sebelum OQ-07 dikonfirmasi.
- *
- * @param {object[]} jumperRegister
- * @param {number} reportingYear
- * @param {string} reportingWeekLabel — label string eksplisit minggu laporan (misalnya "W40")
- * @returns {{ count: number, records: object[] }}
- */
-export function removedJumperCount(jumperRegister, reportingYear, reportingWeekLabel) {
-  const records = jumperRegister.filter((r) =>
-    isRemovedInPeriod(r, reportingYear, reportingWeekLabel)
-  );
-
-  const count = records.reduce((sum, r) => sum + (r.quantity ?? 1), 0);
-  return { count, records };
-}
-
-// ---------------------------------------------------------------------------
-// BR-06: REMAINING PLC RATIO
-// ---------------------------------------------------------------------------
-
-/**
- * Menghitung rasio PLC yang masih memiliki minimal satu jumper aktif (BR-06).
- *
- * Formula: uniqueActivePlcCount / totalPlcInScope
- *
- * "Jumper aktif" = Removal Status = No (OQ-06, asumsi sementara).
- * PLC dihitung berdasarkan nilai unik field `plc` — bukan jumlah record.
- *
- * Jika totalPlcInScope = null atau 0: tidak dapat dihitung.
+ * Aturan bisnis:
+ *   - Label tampilan: PLCs With Active Jumper / Total PLCs.
+ *   - Pembilang yang ditampilkan: jumlah PLC unik yang memiliki jumper aktif (plcsWithActive).
+ *   - Penyebut: Total PLCs in Scope (totalPlcInScope).
+ *   - Persentase: tetap menggunakan jumlah PLC tanpa active jumper dibagi total PLC:
+ *       (plcsWithoutActive / totalPlcInScope) * 100.
+ *   - Jumper berstatus Expired tetap dihitung sebagai jumper aktif.
+ *   - PLC unik: PLC yang sama dengan beberapa jumper hanya dihitung satu kali.
+ *   - Record tanpa Due Date valid (null / kosong) tidak dihitung sebagai jumper aktif.
  *
  * @param {object[]} jumperRegister
  * @param {number|null} totalPlcInScope — dari config.totalPlcInScope
- * @returns {{ ok: boolean, reason?: string, activePlcCount: number, totalPlcInScope: number, ratio: number|null, activePlcList: string[] }}
+ * @param {Date} [today]
+ * @returns {{
+ *   ok: boolean,
+ *   reason?: string,
+ *   plcsWithoutActive: number,
+ *   plcsWithActive: number,
+ *   totalPlcInScope: number|null,
+ *   percentage: number|null,
+ *   activePlcList: string[],
+ *   warning?: string
+ * }}
  */
-export function remainingPlcRatio(jumperRegister, totalPlcInScope) {
-  if (!totalPlcInScope || totalPlcInScope <= 0) {
+export function plcsWithoutActiveJumpers(jumperRegister, totalPlcInScope, today = new Date()) {
+  const total = Number(totalPlcInScope);
+  if (!Number.isInteger(total) || total <= 0) {
     return {
       ok: false,
-      reason:
-        "Total PLC in Scope harus bilangan bulat positif untuk menghitung Remaining PLC ratio.",
-      activePlcCount: 0,
+      reason: "Total PLC in Scope harus bilangan bulat positif untuk menghitung PLC metric.",
+      plcsWithoutActive: 0,
+      plcsWithActive: 0,
       totalPlcInScope: totalPlcInScope ?? null,
-      ratio: null,
+      percentage: null,
       activePlcList: [],
     };
   }
 
-  // Kumpulkan PLC unik dari jumper aktif
+  // Kumpulkan PLC unik dari jumper aktif (PLC yang sama hanya dihitung satu kali)
   const activePlcSet = new Set(
-    jumperRegister.filter(isActiveJumper).map((r) => r.plc).filter(Boolean)
+    (Array.isArray(jumperRegister) ? jumperRegister : [])
+      .filter((r) => r && isActiveJumper(r, today))
+      .map((r) => r.plc)
+      .filter(Boolean)
   );
 
-  const activePlcCount = activePlcSet.size;
-  const ratio = activePlcCount / totalPlcInScope;
+  const plcsWithActive = activePlcSet.size;
+  const plcsWithoutActive = Math.max(0, total - plcsWithActive);
+  const percentage = (plcsWithoutActive / total) * 100;
+
+  // Warning jika known PLCs > totalPlcInScope (data inconsistent)
+  let warning = null;
+  const knownPlcs = new Set(
+    (Array.isArray(jumperRegister) ? jumperRegister : [])
+      .map((r) => r && r.plc)
+      .filter(Boolean)
+  );
+  if (knownPlcs.size > total) {
+    warning = `Known PLCs in register (${knownPlcs.size}) melebihi Total PLC in Scope (${total}). Hasil mungkin tidak akurat.`;
+  }
 
   return {
     ok: true,
-    activePlcCount,
-    totalPlcInScope,
-    ratio,
-    activePlcList: Array.from(activePlcSet).sort(), // sort hanya untuk tampilan, tidak mengubah data sumber
+    plcsWithoutActive,
+    plcsWithActive,
+    totalPlcInScope: total,
+    percentage,
+    activePlcList: Array.from(activePlcSet).sort(),
+    warning,
   };
 }
 
 // ---------------------------------------------------------------------------
-// BR-07: JUMPER COUNT PER PLC (untuk grafik)
+// BR-07: JUMPER COUNT PER PLC (untuk grafik) — hanya jumper aktif
 // ---------------------------------------------------------------------------
 
 /**
- * Mengagregasikan Quantity per PLC dan Category, mengecualikan jumper removed (BR-07).
- *
- * "Jumper aktif" = Removal Status = No (OQ-06, asumsi sementara).
- * PLC diidentifikasi berdasarkan nilai field `plc` (unik per string).
- * Category yang dikembalikan mengikuti urutan CATEGORY_LIST.
+ * Mengagregasikan Quantity per PLC dan Category, hanya jumper aktif.
+ * Quantity default = 1 (field quantity dihapus dari schema).
  *
  * @param {object[]} jumperRegister
+ * @param {Date} [today]
  * @returns {object[]} Array { plc, byCategory: { [category]: number }, total: number }
- *   — diurutkan berdasarkan plc string (untuk konsistensi, bukan untuk makna bisnis)
+ *   — diurutkan berdasarkan plc string (untuk konsistensi tampilan)
  */
-export function jumperCountPerPlc(jumperRegister) {
-  const activeRecords = jumperRegister.filter(isActiveJumper);
+export function jumperCountPerPlc(jumperRegister, today = new Date()) {
+  const activeRecords = jumperRegister.filter((r) => isActiveJumper(r, today));
 
   // Bangun map: plc → { category → totalQuantity }
   const plcMap = new Map();
@@ -392,7 +249,7 @@ export function jumperCountPerPlc(jumperRegister) {
     const cat = record.category;
     if (!cat) continue;
 
-    catMap[cat] = (catMap[cat] ?? 0) + (record.quantity ?? 1);
+    catMap[cat] = (catMap[cat] ?? 0) + 1; // quantity default 1
   }
 
   // Konversi ke array yang terstruktur
@@ -423,28 +280,20 @@ export function jumperCountPerPlc(jumperRegister) {
  * PENTING:
  *   - Fungsi ini TIDAK mengubah nilai areaSummary (BR-01, BR-12).
  *   - Hasil hanya digunakan untuk menampilkan warning informatif.
- *   - Basis perbandingan masih OQ (belum dikonfirmasi pemilik proses).
- *
- * Strategi sementara: bandingkan jumperCount manual dengan
- *   sum(Quantity) dari record aktif per areaId.
- * [OQ] Apakah basis adalah record_count, quantity_sum, atau active_quantity_sum
- *   belum dikonfirmasi. Tandai hasil sebagai "unconfirmed_basis".
+ *   - Basis perbandingan: sum(Quantity=1) dari record aktif per areaId.
  *
  * @param {object[]} areaSummary   — dari state.areaSummary (nilai manual)
  * @param {object[]} jumperRegister
- * @param {object} appConfig
  * @returns {{ basis: string, warnings: object[] }}
  *   warnings: array { areaId, manualCount, computedCount, discrepancy: boolean }
  */
-export function areaSummaryDiscrepancy(areaSummary, jumperRegister, appConfig = APP_CONFIG) {
-  const basis = appConfig.discrepancyWarning.basis;
-
-  // Hitung kuantitas aktif per area dari register
+export function areaSummaryDiscrepancy(areaSummary, jumperRegister) {
+  // Hitung kuantitas aktif per area dari register (default quantity = 1)
   const computedByArea = {};
   for (const areaId of AREA_ID_LIST) {
     computedByArea[areaId] = jumperRegister
       .filter((r) => r.areaId === areaId && isActiveJumper(r))
-      .reduce((sum, r) => sum + (r.quantity ?? 1), 0);
+      .length; // quantity = 1 per record
   }
 
   const warnings = areaSummary.map(({ areaId, jumperCount }) => {
@@ -454,16 +303,12 @@ export function areaSummaryDiscrepancy(areaSummary, jumperRegister, appConfig = 
       manualCount: jumperCount,
       computedCount,
       discrepancy: jumperCount !== null && jumperCount !== computedCount,
-      basisNote:
-        basis === null
-          ? "[OQ] Basis perbandingan belum dikonfirmasi. Angka register dihitung " +
-            "sebagai sum(Quantity) jumper aktif per area (asumsi sementara)."
-          : `Basis: ${basis}`,
+      basisNote: "Basis: jumlah record aktif (Due Date valid) per area. Quantity default 1.",
     };
   });
 
   return {
-    basis: basis ?? "unconfirmed_basis",
+    basis: "active_record_count_per_area",
     warnings,
   };
 }
@@ -537,23 +382,53 @@ export function calculateAreaSummariesFromWeeklyChart(weeklyChartData, reporting
 }
 
 // ---------------------------------------------------------------------------
-// AGREGASI JUMLAH JUMPER TOTAL (semua aktif)
+// AGREGASI JUMLAH JUMPER AKTIF PER AREA
 // ---------------------------------------------------------------------------
 
 /**
- * Menghitung total Quantity semua jumper aktif per area.
+ * Menghitung total Quantity (default 1) semua jumper aktif per area.
  * Digunakan untuk perbandingan discrepancy dan statistik internal.
- * [OQ-06] Asumsi aktif = Removal=No.
  *
  * @param {object[]} jumperRegister
+ * @param {Date} [today]
  * @returns {object} { [areaId]: number }
  */
-export function activeJumperQuantityByArea(jumperRegister) {
+export function activeJumperQuantityByArea(jumperRegister, today = new Date()) {
   const result = {};
   for (const areaId of AREA_ID_LIST) {
     result[areaId] = jumperRegister
-      .filter((r) => r.areaId === areaId && isActiveJumper(r))
-      .reduce((sum, r) => sum + (r.quantity ?? 1), 0);
+      .filter((r) => r.areaId === areaId && isActiveJumper(r, today))
+      .length; // quantity = 1 per record
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// FILTER REGISTER BERDASARKAN AUTHORIZATION TYPE (Phase 3.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mengembalikan daftar record yang berstatus Authorized secara eksak.
+ * Tidak menggunakan status, due date, PLC, area, category, atau keberadaan record sebagai pengganti.
+ * PURE function: tidak memutasi array atau record sumber.
+ *
+ * @param {object[]} jumperRegister
+ * @returns {object[]}
+ */
+export function getAuthorizedJumpers(jumperRegister) {
+  if (!Array.isArray(jumperRegister)) return [];
+  return jumperRegister.filter((r) => r && r.authorizationType === AUTH_TYPE.AUTHORIZED);
+}
+
+/**
+ * Mengembalikan daftar record yang berstatus Non-Authorized secara eksak.
+ * Tidak menggunakan status, due date, PLC, area, category, atau keberadaan record sebagai pengganti.
+ * PURE function: tidak memutasi array atau record sumber.
+ *
+ * @param {object[]} jumperRegister
+ * @returns {object[]}
+ */
+export function getNonAuthorizedJumpers(jumperRegister) {
+  if (!Array.isArray(jumperRegister)) return [];
+  return jumperRegister.filter((r) => r && r.authorizationType === AUTH_TYPE.NON_AUTHORIZED);
 }

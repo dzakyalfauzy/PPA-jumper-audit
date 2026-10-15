@@ -1,43 +1,43 @@
 /**
  * slidePreview.js
- * Render preview laporan PPA Jumper Audit dalam satu "slide" 16:9.
+ * Render preview laporan PPA Jumper Audit dalam satu "slide" 16:9 (revisi).
  *
  * Tanggung jawab:
  *   - Menerima state dan menghitung semua KPI via selectors.js (tidak menduplikasi logik).
  *   - Membangun HTML layout satu slide.
  *   - Memanggil chartRenderer.js untuk render 12 Chart.js grafik.
- *   - Menampilkan status "belum tersedia" jika konfigurasi OQ belum lengkap.
- *   - Menampilkan overflow warning jika Remaining Jumper List terlalu panjang.
+ *   - Menampilkan status "belum tersedia" untuk tabel yang bergantung field yg dihapus.
+ *   - Menampilkan overflow warning jika Jumper Without MOC/Authorized Jumper terlalu panjang.
  *   - Memperbarui preview setiap kali dipanggil (tidak stateful sendiri).
  *
- * Layout zona dalam slide (mengikuti struktur slide 2 referensi):
+ * Layout zona dalam slide (revisi — tanpa Area Summary cards):
  *
  *  ┌─────────────────────────────────────────────────────────────────────┐
  *  │ HEADER: Judul · Plant Area · Week/Year                              │
  *  ├────────────────────────────────┬────────────────────────────────────┤
- *  │ AREA SUMMARY (4 kartu)         │ REMAINING JUMPER LIST (panel kanan)│
- *  ├──────────┬─────────────────────┤                                    │
- *  │ CHARTS   │  12 grafik          │ TOTAL REMOVED                      │
- *  │ 4×3 grid │  (area × category) │                                    │
- *  ├──────────┴─────────────────────┼────────────────────────────────────┤
- *  │ AUTHORIZED/MOC KPI             │ REMAINING PLC RATIO                │
- *  │ JUMPER UPDATE TABLE            │ COUNT PER PLC CHART                │
+ *  │ 12 CHARTS (4×3 grid)           │ JUMPER WITHOUT MOC/AUTHORIZED      │
+ *  │ (area × category)              │ JUMPER (was: Remaining Jumper List)│
+ *  ├────────────────────────────────┼────────────────────────────────────┤
+ *  │ TOTAL JUMPER WITH MOC/         │ PLCs WITHOUT ACTIVE JUMPER /       │
+ *  │ AUTHORIZED JUMPER              │ TOTAL PLCs — PERCENTAGE            │
+ *  │ (was: Jumper Update Table)     │ COUNT PER PLC CHART                │
  *  └────────────────────────────────┴────────────────────────────────────┘
  *
  * Catatan: layout menggunakan CSS Grid di dalam container rasio 16:9.
  * Di browser, container discale agar muat di layar.
- * Di export PPTX (Phase 6), posisi dan ukuran akan dikonversi ke unit inci/EMU.
+ * Di export PPTX, posisi dan ukuran akan dikonversi ke unit inci/EMU.
  */
 
 "use strict";
 
-import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STATUS_COLORS, DUE_SOON_MAX_DAYS, UPCOMING_MAX_DAYS } from "../model/constants.js";
+import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STATUS_COLORS, EXPIRING_SOON_MAX_DAYS } from "../model/constants.js";
 import {
-  remainingJumperList,
-  remainingPlcRatio,
+  plcsWithoutActiveJumpers,
   jumperCountPerPlc,
   calculateAreaSummariesFromWeeklyChart,
   getJumperStatus,
+  getAuthorizedJumpers,
+  getNonAuthorizedJumpers,
 } from "../logic/selectors.js";
 import { getAllChartSeries, checkChartDataCompleteness } from "../logic/chartData.js";
 import { renderAllCharts, destroyAllCharts, canvasId, CATEGORY_COLORS } from "./chartRenderer.js";
@@ -47,8 +47,8 @@ import { APP_CONFIG } from "../model/config.js";
 // KONSTANTA LAYOUT
 // ---------------------------------------------------------------------------
 
-// Jumlah baris maksimal Remaining Jumper List sebelum overflow warning
-const MAX_REMAINING_LIST_ROWS = 12;
+// Jumlah baris maksimal Jumper Without MOC/Authorized Jumper sebelum overflow warning
+const MAX_JUMPER_WITHOUT_MOC_ROWS = 12;
 
 // ---------------------------------------------------------------------------
 // PUBLIC API
@@ -74,13 +74,48 @@ export function renderSlidePreview(container, state, ChartJS) {
 
   // 4. Render 12 Chart.js instances
   if (ChartJS) {
-    renderAllCharts(state.weeklyChartData, state.config.weekLabels || [], ChartJS);
+    renderAllCharts(state.weeklyChartData, _getSortedWeekLabels(state), ChartJS);
   }
 
   // 5. Render grafik Count per PLC (bar chart)
   if (ChartJS && computed.jumperPerPlc.length > 0) {
     _renderPlcChart(computed.jumperPerPlc, ChartJS);
   }
+}
+
+/**
+ * Ambil week labels yang diurutkan kronologis dari weeklyChartData rows.
+ * Digunakan untuk chart rendering agar urutan konsisten.
+ */
+function _getSortedWeekLabels(state) {
+  const weeks = new Set();
+  for (const row of state.weeklyChartData) {
+    if (row.week) weeks.add(row.week);
+  }
+  // Sort chronologically using parseWeekLabel logic
+  return Array.from(weeks).sort((a, b) => {
+    const pa = _parseWeekForSort(a);
+    const pb = _parseWeekForSort(b);
+    if (pa.year !== pb.year) return pa.year - pb.year;
+    if (pa.weekNumber !== pb.weekNumber) return pa.weekNumber - pb.weekNumber;
+    return a.localeCompare(b);
+  });
+}
+
+function _parseWeekForSort(label) {
+  const str = String(label).trim();
+  const yearMatch = str.match(/(?:wk|w)\s*(\d{1,2})\s*\(['"]?(\d{2,4})['"]?\)/i);
+  if (yearMatch) {
+    const wNum = parseInt(yearMatch[1], 10);
+    let y = parseInt(yearMatch[2], 10);
+    if (y < 100) y = 2000 + y;
+    return { weekNumber: wNum, year: y };
+  }
+  const simpleMatch = str.match(/^(?:wk|w)?\s*(\d{1,2})$/i);
+  if (simpleMatch) {
+    return { weekNumber: parseInt(simpleMatch[1], 10), year: 2026 };
+  }
+  return { weekNumber: 999, year: 2026 };
 }
 
 /**
@@ -97,24 +132,13 @@ export function unmountSlidePreview() {
 function _computeAll(state) {
   const { config, areaSummary, weeklyChartData, jumperRegister } = state;
 
-  // Buat appConfig dengan identificationYearFilter dari state.config (OQ-01)
-  const appConfig = {
-    ...APP_CONFIG,
-    reporting: {
-      identificationYearFilter: config.identificationYearFilter ?? null,
-    },
-    discrepancyWarning: APP_CONFIG.discrepancyWarning,
-  };
+  const weekLabels = _getSortedWeekLabels(state);
 
-  // Tentukan label minggu laporan secara EKSPLISIT dari config.reportingWeek
-  // Jangan gunakan label terakhir dalam weekLabels sebagai pengganti reporting period
-  const reportingWeekNum = config.reportingWeek ?? null;
-  const reportingWeekLabel = reportingWeekNum != null ? `W${reportingWeekNum}` : null;
-  const weekLabels = config.weekLabels || [];
+  const plcMetricResult = plcsWithoutActiveJumpers(jumperRegister, config.totalPlcInScope);
+  const jumperPerPlc    = jumperCountPerPlc(jumperRegister);
 
-  const remainingResult  = remainingJumperList(jumperRegister, appConfig);
-  const plcRatioResult   = remainingPlcRatio(jumperRegister, config.totalPlcInScope);
-  const jumperPerPlc     = jumperCountPerPlc(jumperRegister);
+  const authorizedJumpers    = getAuthorizedJumpers(jumperRegister);
+  const nonAuthorizedJumpers = getNonAuthorizedJumpers(jumperRegister);
 
   // Completeness check untuk chart data
   const chartCompleteness = checkChartDataCompleteness(weeklyChartData, weekLabels);
@@ -127,13 +151,13 @@ function _computeAll(state) {
   );
 
   return {
-    appConfig,
-    remainingResult,
-    plcRatioResult,
+    plcMetricResult,
     jumperPerPlc,
     chartCompleteness,
-    reportingWeekLabel,
     calculatedAreaSummaries,
+    weekLabels,
+    authorizedJumpers,
+    nonAuthorizedJumpers,
   };
 }
 
@@ -144,19 +168,22 @@ function _computeAll(state) {
 function _buildSlideHTML(state, computed) {
   const { config, areaSummary, jumperRegister } = state;
   const {
-    remainingResult,
-    plcRatioResult, jumperPerPlc, chartCompleteness, reportingWeekLabel,
+    plcMetricResult,
+    jumperPerPlc,
+    chartCompleteness,
+    calculatedAreaSummaries,
+    authorizedJumpers,
+    nonAuthorizedJumpers,
   } = computed;
 
   const title    = config.title    || "—";
   const area     = config.plantArea || "—";
   const year     = config.reportingYear  ?? "—";
   const week     = config.reportingWeek  ?? "—";
-  const weekLabels = config.weekLabels || [];
 
-  // Overflow warning
-  const remainingCount = remainingResult.ok ? remainingResult.data.length : 0;
-  const overflowWarning = remainingResult.ok && remainingCount > MAX_REMAINING_LIST_ROWS;
+  // Overflow warning untuk Jumper Without MOC/Authorized Jumper (Non-Authorized)
+  const jumperWithoutMocCount = nonAuthorizedJumpers.length;
+  const overflowWarning = jumperWithoutMocCount > MAX_JUMPER_WITHOUT_MOC_ROWS;
 
   return `
     <!-- ── Slide warnings (luar kotak slide) ── -->
@@ -170,37 +197,19 @@ function _buildSlideHTML(state, computed) {
         <div class="slide-header__title">${_esc(title)}</div>
         <div class="slide-header__meta">
           ${_esc(area)} &nbsp;|&nbsp; Week ${_esc(String(week))} · ${_esc(String(year))}
-          ${reportingWeekLabel ? `&nbsp;|&nbsp; Period: ${_esc(reportingWeekLabel)} (${_esc(String(year))})` : ""}
         </div>
       </div>
 
       <!-- BODY: 2-column layout ── -->
       <div class="slide-body">
 
-        <!-- ── LEFT COLUMN ── -->
+        <!-- ── LEFT COLUMN: Charts (12) + Total Jumper With MOC/Authorized Jumper ── -->
         <div class="slide-col-left">
-
-          <!-- Area Summary (Otomatis dari Total Actual pada Reporting Week) -->
-          <div class="slide-area-summary">
-            ${AREA_ID_LIST.map((areaId) => {
-              const calc = computed.calculatedAreaSummaries ? computed.calculatedAreaSummaries[areaId] : null;
-              const val = calc && calc.totalActual !== null ? calc.totalActual : null;
-              const note = calc && !calc.isComplete ? ' <span style="font-size:8px;color:#c00000;">*</span>' : '';
-              return `
-              <div class="slide-area-card">
-                <div class="slide-area-card__label">${AREA_LABELS[areaId]}</div>
-                <div class="slide-area-card__value">
-                  ${val !== null ? `${val}${note}` : '<span class="slide-empty">—</span>'}
-                </div>
-              </div>
-            `;
-            }).join("")}
-          </div>
 
           <!-- 12 Charts Grid: 4 area columns × 3 category rows -->
           <div class="slide-charts-grid-4col">
             ${AREA_ID_LIST.map((areaId) => {
-              const calc = computed.calculatedAreaSummaries ? computed.calculatedAreaSummaries[areaId] : null;
+              const calc = calculatedAreaSummaries ? calculatedAreaSummaries[areaId] : null;
               const jumperHeaderCount = calc && calc.totalActual !== null ? ` (${calc.totalActual} jumpers)` : "";
               return `
               <div class="slide-chart-area-col">
@@ -227,13 +236,12 @@ function _buildSlideHTML(state, computed) {
             }).join("")}
           </div>
 
-          <!-- Bottom-left: Jumper Update Table (kartu ringkasan status dihapus) -->
+          <!-- Bottom-left: Total Jumper With MOC/Authorized Jumper -->
           <div class="slide-bottom-left">
 
-            <!-- Jumper Update Table -->
             <div class="slide-update-table-wrap">
-              <div class="slide-section-title">Jumper Update Table</div>
-              ${_buildUpdateTable(jumperRegister)}
+              <div class="slide-section-title">Total Jumper With MOC/Authorized Jumper</div>
+              ${_buildTotalJumperWithMocAuthorizedTable(authorizedJumpers)}
             </div>
 
           </div>
@@ -243,26 +251,24 @@ function _buildSlideHTML(state, computed) {
         <!-- ── RIGHT COLUMN ── -->
         <div class="slide-col-right">
 
-          <!-- Remaining Jumper List -->
+          <!-- Jumper Without MOC/Authorized Jumper -->
           <div class="slide-remaining-panel">
             <div class="slide-section-title">
-              Remaining Jumper List
-              ${!remainingResult.ok
-                ? '<span class="oq-note">[tidak tersedia]</span>'
-                : `<span class="slide-count-badge">${remainingResult.data.length}</span>`
-              }
+              Jumper Without MOC/Authorized Jumper
+              <span class="slide-count-badge">${nonAuthorizedJumpers.length}</span>
+              <span class="oq-note" style="margin-left:8px; font-size:0.75rem;">[Data source: Jumper Register — Non-Authorized]</span>
             </div>
             ${overflowWarning
-              ? `<div class="slide-overflow-warning">⚠ Daftar melebihi ${MAX_REMAINING_LIST_ROWS} item — tampilkan ${MAX_REMAINING_LIST_ROWS} pertama. Kurangi data atau scroll di output nyata.</div>`
+              ? `<div class="slide-overflow-warning">⚠ Daftar melebihi ${MAX_JUMPER_WITHOUT_MOC_ROWS} item — tampilkan ${MAX_JUMPER_WITHOUT_MOC_ROWS} pertama. Kurangi data atau scroll di output nyata.</div>`
               : ""
             }
-            ${_buildRemainingList(remainingResult, MAX_REMAINING_LIST_ROWS)}
+            ${_buildJumperWithoutMocAuthorizedList(nonAuthorizedJumpers, MAX_JUMPER_WITHOUT_MOC_ROWS)}
           </div>
 
-          <!-- Remaining PLC Ratio -->
+          <!-- PLCs With Active Jumper / Total PLCs — Percentage -->
           <div class="slide-plc-section">
-            <div class="slide-section-title">Remaining PLC</div>
-            ${_buildPlcRatio(plcRatioResult)}
+            <div class="slide-section-title">PLCs With Active Jumper / Total PLCs</div>
+            ${_buildPlcsWithoutActiveMetric(plcMetricResult)}
           </div>
 
           <!-- Count per PLC bar chart -->
@@ -289,18 +295,18 @@ function _buildSlideHTML(state, computed) {
 function _buildWarningsBanner(computed, overflowWarning) {
   const warnings = [];
 
-  if (!computed.remainingResult.ok) {
-    warnings.push(`<li><strong>Remaining Jumper List:</strong> ${_esc(computed.remainingResult.reason)}</li>`);
-  }
   if (!computed.chartCompleteness.complete) {
     const n = computed.chartCompleteness.incompleteCells.length;
     warnings.push(`<li>${n} sel data chart kosong (Plan atau Actual belum diisi).</li>`);
   }
-  if (!computed.plcRatioResult.ok) {
-    warnings.push(`<li><strong>PLC Ratio:</strong> ${_esc(computed.plcRatioResult.reason)}</li>`);
+  if (!computed.plcMetricResult.ok) {
+    warnings.push(`<li><strong>PLC Metric:</strong> ${_esc(computed.plcMetricResult.reason)}</li>`);
+  }
+  if (computed.plcMetricResult.warning) {
+    warnings.push(`<li><strong>Warning:</strong> ${_esc(computed.plcMetricResult.warning)}</li>`);
   }
   if (overflowWarning) {
-    warnings.push(`<li><strong>Overflow:</strong> Remaining Jumper List melebihi ${MAX_REMAINING_LIST_ROWS} item. Hanya ${MAX_REMAINING_LIST_ROWS} ditampilkan. Preview dan export mungkin terpotong (BR-10).</li>`);
+    warnings.push(`<li><strong>Overflow:</strong> Jumper Without MOC/Authorized Jumper melebihi ${MAX_JUMPER_WITHOUT_MOC_ROWS} item. Hanya ${MAX_JUMPER_WITHOUT_MOC_ROWS} ditampilkan. Preview dan export mungkin terpotong.</li>`);
   }
 
   if (warnings.length === 0) return "";
@@ -312,13 +318,10 @@ function _buildWarningsBanner(computed, overflowWarning) {
   `;
 }
 
-function _buildRemainingList(remainingResult, maxRows) {
-  if (!remainingResult.ok) {
-    return `<div class="slide-empty-section oq-note">${_esc(remainingResult.reason)}</div>`;
-  }
-  const items = remainingResult.data.slice(0, maxRows);
+function _buildJumperWithoutMocAuthorizedList(nonAuthorizedJumpers, maxRows) {
+  const items = (nonAuthorizedJumpers || []).slice(0, maxRows);
   if (items.length === 0) {
-    return `<div class="slide-empty-section">Tidak ada jumper yang memenuhi filter (BR-03).</div>`;
+    return `<div class="slide-empty-section">Belum ada data Jumper Non-Authorized.</div>`;
   }
   return `
     <div class="slide-remaining-list">
@@ -332,35 +335,36 @@ function _buildRemainingList(remainingResult, maxRows) {
       `).join("")}
     </div>
     <div class="slide-remaining-criteria">
-      Criteria: field dasar (Removal, MOC, ID Year) dihapus dari register — dasar BR-03 perlu dikonfirmasi ulang.
+      Data source: Jumper Register (Authorization Type: Non-Authorized).
     </div>
   `;
 }
 
-function _buildPlcRatio(plcRatioResult) {
-  if (!plcRatioResult.ok) {
-    return `<div class="slide-empty-section oq-note">${_esc(plcRatioResult.reason)}</div>`;
+function _buildPlcsWithoutActiveMetric(plcMetricResult) {
+  if (!plcMetricResult.ok) {
+    return `<div class="slide-empty-section oq-note">${_esc(plcMetricResult.reason)}</div>`;
   }
-  const pct = (plcRatioResult.ratio * 100).toFixed(1);
+  const pct = plcMetricResult.percentage !== null ? plcMetricResult.percentage.toFixed(1) : "—";
   return `
     <div class="slide-plc-ratio">
       <div class="slide-plc-ratio__fraction">
-        ${plcRatioResult.activePlcCount} / ${plcRatioResult.totalPlcInScope}
+        ${plcMetricResult.plcsWithActive} / ${plcMetricResult.totalPlcInScope}
       </div>
       <div class="slide-plc-ratio__pct">${pct}%</div>
-      <div class="slide-plc-ratio__label">PLC with active jumpers / Total PLC in Scope</div>
+      <div class="slide-plc-ratio__label">PLCs with active jumper / Total PLCs in Scope</div>
     </div>
   `;
 }
 
-function _buildUpdateTable(jumperRegister) {
+function _buildTotalJumperWithMocAuthorizedTable(authorizedJumpers) {
   // Kolom: ID | PLC | Area | Category | Installed | Due Date | Status
   // Status dihitung dari Due Date (bukan input pengguna).
-  if (jumperRegister.length === 0) {
-    return `<div class="slide-empty-section">Tidak ada data register.</div>`;
+  // Hanya menampilkan record dengan authorizationType === "Authorized".
+  if (!authorizedJumpers || authorizedJumpers.length === 0) {
+    return `<div class="slide-empty-section">Belum ada data Jumper Authorized.</div>`;
   }
 
-  const rows = jumperRegister.map((r) => {
+  const rows = authorizedJumpers.map((r) => {
     const status = getJumperStatus(r.dueDate);
     const statusDisplay = status
       ? (() => {
@@ -400,7 +404,8 @@ function _buildUpdateTable(jumperRegister) {
       </table>
     </div>
     <div class="oq-note" style="font-size:0.68rem;margin-top:2px;">
-      Status dihitung otomatis dari Due Date: Normal (&gt; ${UPCOMING_MAX_DAYS} hari) · Upcoming (${DUE_SOON_MAX_DAYS + 1}–${UPCOMING_MAX_DAYS} hari) · Due Soon (0–${DUE_SOON_MAX_DAYS} hari) · Expired (lewat).
+      Status dihitung otomatis dari Due Date: Active (> ${EXPIRING_SOON_MAX_DAYS} hari) · Expiring Soon (0–${EXPIRING_SOON_MAX_DAYS} hari) · Expired (lewat).
+      <br>Definisi "With MOC/Authorized" memerlukan konfirmasi — field MOC/Authorization dihapus dari register.
     </div>
   `;
 }
@@ -453,5 +458,5 @@ function _renderPlcChart(jumperPerPlc, ChartJS) {
 // ---------------------------------------------------------------------------
 
 function _esc(str) {
-  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

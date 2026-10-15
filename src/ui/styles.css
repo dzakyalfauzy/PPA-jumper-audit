@@ -356,6 +356,22 @@ body {
   font-size: .84rem;
 }
 
+/* --- Weekly Chart filter bar ----------------------------------------------- */
+.wc-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.wc-filter-select { max-width: 180px; }
+.wc-filter-search { max-width: 220px; }
+.wc-see-more-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
 /* --- Toolbar / Table controls --------------------------------------------- */
 .table-toolbar {
   display: flex;

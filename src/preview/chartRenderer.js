@@ -70,7 +70,7 @@ const _chartInstances = new Map(); // key → Chart instance
  * Canvas harus sudah ada di DOM dengan id "chart-{areaId}-{category}".
  *
  * @param {object[]} weeklyChartData — dari state.weeklyChartData
- * @param {string[]} weekLabels      — urutan eksplisit dari config.weekLabels
+ * @param {string[]} weekLabels      — urutan eksplisit (kronologis dari baris weeklyChartData)
  * @param {object}   ChartJS         — window.Chart dari CDN; diinjeksi agar testable
  */
 export function renderAllCharts(weeklyChartData, weekLabels, ChartJS) {

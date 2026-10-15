@@ -1,15 +1,15 @@
 /**
  * formRegister.js
- * Form B: Jumper Register — CRUD (schema baru, revisi).
+ * Form B: Jumper Authorized Register — CRUD (schema revisi).
  *
  * Tanggung jawab:
- *   - Render tabel ringkasan Jumper Register: ID | PLC | Area | Category |
+ *   - Render tabel ringkasan Jumper Authorized: ID | PLC | Area | Category |
  *     Installed | Due Date | Status | Aksi.
  *   - Modal Add/Edit: ID numerik 3-digit, Area → dropdown PLC tergantung area
  *     (PLC_BY_AREA), Installed Date & Due Date (type="date", YYYY-MM-DD).
- *   - Status (Normal / Upcoming / Due Soon / Expired) DIHITUNG dari Due Date — bukan input.
+ *   - Status (Active / Expiring Soon / Expired) DIHITUNG dari Due Date — bukan input.
  *   - Field lama (Authorization, MOC, Identification Year, Removal, Quantity,
- *     Due Date Status) tidak lagi ada pada form maupun data model.
+ *     Due Date Status, installedWeekOrDate) tidak lagi ada pada form maupun data model.
  *   - Validasi semua field wajib; error ditampilkan dekat input.
  *   - Memanggil onStateChange setiap ada perubahan.
  *
@@ -26,8 +26,9 @@ import {
   PLC_BY_AREA,
   JUMPER_STATUS,
   STATUS_COLORS,
-  DUE_SOON_MAX_DAYS,
-  UPCOMING_MAX_DAYS,
+  EXPIRING_SOON_MAX_DAYS,
+  AUTH_TYPE,
+  AUTH_TYPE_LIST,
 } from "../model/constants.js";
 import {
   getJumperRegister,
@@ -74,9 +75,14 @@ function _render(container) {
     data = data.filter(r =>
       (r.jumperId && r.jumperId.toLowerCase().includes(q)) ||
       (r.plc && r.plc.toLowerCase().includes(q)) ||
-      (r.description && r.description.toLowerCase().includes(q))
+      (r.description && r.description.toLowerCase().includes(q)) ||
+      (r.authorizationType && r.authorizationType.toLowerCase().includes(q))
     );
   }
+
+  const unclassifiedCount = getJumperRegister().filter(
+    (r) => !r.authorizationType || !AUTH_TYPE_LIST.includes(r.authorizationType)
+  ).length;
 
   container.innerHTML = `
     <!-- toolbar -->
@@ -88,12 +94,18 @@ function _render(container) {
       <button class="btn btn--primary btn--sm" id="reg-add-btn" type="button">+ Tambah Jumper Baru</button>
     </div>
 
+    ${unclassifiedCount > 0 ? `
+    <!-- warning record belum diklasifikasikan -->
+    <div class="alert alert--warning" style="margin-bottom:12px;background:#FFFBEB;border:1px solid #FCD34D;color:#92400E;padding:10px 14px;border-radius:6px;font-size:0.875rem;">
+      <strong>Perhatian:</strong> Terdapat ${unclassifiedCount} record lama yang belum memiliki klasifikasi Authorization Type. Silakan klik <strong>Edit</strong> pada record tersebut dan pilih <strong>Authorized</strong> atau <strong>Non-Authorized</strong>.
+    </div>
+    ` : ""}
+
     <!-- status legend -->
     <div class="oq-banner" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
       <strong>Status dihitung otomatis dari Due Date:</strong>
-      <span style="background:${STATUS_COLORS[JUMPER_STATUS.NORMAL].bg};color:${STATUS_COLORS[JUMPER_STATUS.NORMAL].text};padding:2px 10px;border-radius:10px;font-weight:600;">Normal (&gt; ${UPCOMING_MAX_DAYS} hari)</span>
-      <span style="background:${STATUS_COLORS[JUMPER_STATUS.UPCOMING].bg};color:${STATUS_COLORS[JUMPER_STATUS.UPCOMING].text};padding:2px 10px;border-radius:10px;font-weight:600;">Upcoming (${DUE_SOON_MAX_DAYS + 1}–${UPCOMING_MAX_DAYS} hari)</span>
-      <span style="background:${STATUS_COLORS[JUMPER_STATUS.DUE_SOON].bg};color:${STATUS_COLORS[JUMPER_STATUS.DUE_SOON].text};padding:2px 10px;border-radius:10px;font-weight:600;">Due Soon (0–${DUE_SOON_MAX_DAYS} hari)</span>
+      <span style="background:${STATUS_COLORS[JUMPER_STATUS.ACTIVE].bg};color:${STATUS_COLORS[JUMPER_STATUS.ACTIVE].text};padding:2px 10px;border-radius:10px;font-weight:600;">Active (> ${EXPIRING_SOON_MAX_DAYS} hari)</span>
+      <span style="background:${STATUS_COLORS[JUMPER_STATUS.EXPIRING_SOON].bg};color:${STATUS_COLORS[JUMPER_STATUS.EXPIRING_SOON].text};padding:2px 10px;border-radius:10px;font-weight:600;">Expiring Soon (0–${EXPIRING_SOON_MAX_DAYS} hari)</span>
       <span style="background:${STATUS_COLORS[JUMPER_STATUS.EXPIRED].bg};color:${STATUS_COLORS[JUMPER_STATUS.EXPIRED].text};padding:2px 10px;border-radius:10px;font-weight:600;">Expired (lewat)</span>
     </div>
 
@@ -106,6 +118,7 @@ function _render(container) {
             <th>PLC</th>
             <th>Area</th>
             <th>Category</th>
+            <th>Auth Type</th>
             <th>Installed</th>
             <th>Due Date</th>
             <th>Status</th>
@@ -149,9 +162,19 @@ function _statusBadge(dueDate) {
   return `<span style="background:${c.bg};color:${c.text};padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">${_esc(status)}</span>`;
 }
 
+function _authTypeBadge(authorizationType) {
+  if (authorizationType === AUTH_TYPE.AUTHORIZED) {
+    return `<span style="background:#DBEAFE;color:#1E40AF;padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">Authorized</span>`;
+  }
+  if (authorizationType === AUTH_TYPE.NON_AUTHORIZED) {
+    return `<span style="background:#FEF3C7;color:#92400E;padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">Non-Authorized</span>`;
+  }
+  return `<span style="background:#FEE2E2;color:#991B1B;padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;" title="Klik Edit untuk memilih klasifikasi">Perlu Klasifikasi</span>`;
+}
+
 function _renderRows(data) {
   if (data.length === 0) {
-    return `<tr><td colspan="8" class="empty-state">Belum ada data.</td></tr>`;
+    return `<tr><td colspan="9" class="empty-state">Belum ada data.</td></tr>`;
   }
   return data.map((r) => `
     <tr>
@@ -159,6 +182,7 @@ function _renderRows(data) {
       <td>${_esc(r.plc)}</td>
       <td>${AREA_LABELS[r.areaId] || _esc(r.areaId)}</td>
       <td>${_esc(r.category)}</td>
+      <td>${_authTypeBadge(r.authorizationType)}</td>
       <td>${_esc(r.installedDate) || '<span class="text-muted">—</span>'}</td>
       <td>${_esc(r.dueDate) || '<span class="text-muted">—</span>'}</td>
       <td>${_statusBadge(r.dueDate)}</td>
@@ -177,6 +201,7 @@ function _renderRows(data) {
 function _buildModalForm() {
   const areaOptions = AREA_ID_LIST.map((id) => `<option value="${id}">${AREA_LABELS[id]}</option>`).join("");
   const catOptions  = CATEGORY_LIST.map((c) => `<option value="${c}">${c}</option>`).join("");
+  const authOptions = AUTH_TYPE_LIST.map((a) => `<option value="${a}">${a}</option>`).join("");
 
   return `
     <div class="alert alert--error" id="reg-form-errors" style="display:none;"></div>
@@ -215,6 +240,14 @@ function _buildModalForm() {
         <div class="field-error" id="rf-err-category"></div>
       </div>
 
+      <div class="form-group">
+        <label class="form-label" for="rf-auth-type">Authorization Type <span class="required">*</span></label>
+        <select id="rf-auth-type" class="form-select">
+          <option value="">-- Pilih --</option>${authOptions}
+        </select>
+        <div class="field-error" id="rf-err-auth-type"></div>
+      </div>
+
       <div class="form-group form-group--full">
         <label class="form-label" for="rf-description">Description <span class="required">*</span></label>
         <textarea id="rf-description" class="form-textarea" placeholder="Deskripsi jumper..."></textarea>
@@ -244,7 +277,7 @@ function _buildModalForm() {
         <label class="form-label" for="rf-due-date">Due Date <span class="text-muted" style="text-transform:none;font-weight:400;">(opsional)</span></label>
         <input type="date" id="rf-due-date" class="form-input" />
         <div class="field-error" id="rf-err-due-date"></div>
-        <div class="text-muted" style="font-size:0.85em;">Status (Normal / Upcoming / Due Soon / Expired) dihitung otomatis.</div>
+        <div class="text-muted" style="font-size:0.85em;">Status (Active / Expiring Soon / Expired) dihitung otomatis.</div>
       </div>
 
     </div>
@@ -393,19 +426,23 @@ function _closeModal(container) {
 // ---------------------------------------------------------------------------
 
 function _populateModal(container, record) {
-  _setField(container, "#rf-id",          record.jumperId     ?? "");
-  _setField(container, "#rf-area",        record.areaId       ?? "");
+  _setField(container, "#rf-id",          record.jumperId          ?? "");
+  _setField(container, "#rf-area",        record.areaId            ?? "");
   // PLC dropdown harus diisi dulu sesuai area sebelum nilai dipilih
   _populatePlcOptions(container, record.plc ?? null);
-  _setField(container, "#rf-category",    record.category     ?? "");
-  _setField(container, "#rf-description", record.description  ?? "");
-  _setField(container, "#rf-equipment",   record.equipmentTag ?? "");
-  _setField(container, "#rf-installed",   record.installedDate ?? "");
-  _setField(container, "#rf-due-date",    record.dueDate      ?? "");
+  _setField(container, "#rf-category",    record.category          ?? "");
+  const authVal = record.authorizationType && AUTH_TYPE_LIST.includes(record.authorizationType)
+    ? record.authorizationType
+    : "";
+  _setField(container, "#rf-auth-type",   authVal);
+  _setField(container, "#rf-description", record.description       ?? "");
+  _setField(container, "#rf-equipment",   record.equipmentTag      ?? "");
+  _setField(container, "#rf-installed",   record.installedDate     ?? "");
+  _setField(container, "#rf-due-date",    record.dueDate           ?? "");
 }
 
 function _clearModal(container) {
-  const fields = ["#rf-id","#rf-area","#rf-plc","#rf-category","#rf-description",
+  const fields = ["#rf-id","#rf-area","#rf-plc","#rf-category","#rf-auth-type","#rf-description",
     "#rf-equipment","#rf-installed","#rf-due-date"];
   fields.forEach((sel) => _setField(container, sel, ""));
   // PLC dikosongkan dan dinonaktifkan sampai area dipilih
@@ -427,13 +464,14 @@ function _saveRecord(container) {
 
   const record = createJumperRecord({
     jumperId,
-    plc:           container.querySelector("#rf-plc")?.value            || null,
-    areaId:        container.querySelector("#rf-area")?.value           || null,
-    category:      container.querySelector("#rf-category")?.value       || null,
-    description:   container.querySelector("#rf-description")?.value.trim() || null,
-    equipmentTag:  container.querySelector("#rf-equipment")?.value.trim()   || null,
-    installedDate: container.querySelector("#rf-installed")?.value      || null,
-    dueDate:       container.querySelector("#rf-due-date")?.value       || null,
+    plc:               container.querySelector("#rf-plc")?.value            || null,
+    areaId:            container.querySelector("#rf-area")?.value           || null,
+    category:          container.querySelector("#rf-category")?.value       || null,
+    authorizationType: container.querySelector("#rf-auth-type")?.value       || null,
+    description:       container.querySelector("#rf-description")?.value.trim() || null,
+    equipmentTag:      container.querySelector("#rf-equipment")?.value.trim()   || null,
+    installedDate:     container.querySelector("#rf-installed")?.value      || null,
+    dueDate:           container.querySelector("#rf-due-date")?.value       || null,
   });
 
   // Validasi — untuk edit, exclude jumperId dari set existing (akan di-replace)
@@ -503,5 +541,5 @@ function _clearModalErrors(container) {
 // ---------------------------------------------------------------------------
 
 function _esc(str) {
-  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

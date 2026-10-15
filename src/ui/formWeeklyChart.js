@@ -1,6 +1,6 @@
 /**
  * formWeeklyChart.js
- * Form A: Weekly Chart Data — tabel Plan/Actual per Area × Category × Week.
+ * Form A: Weekly Chart Data — tabel Plan/Actual per Area × Category × Week (revisi).
  *
  * Tanggung jawab:
  *   - Render tabel baris weekly chart data dari state.
@@ -9,18 +9,20 @@
  *   - Hapus baris (dengan konfirmasi singkat).
  *   - Cegah kombinasi Area + Category + Week duplikat (BR-11).
  *   - Pertahankan perbedaan null dan 0 untuk Plan/Actual (BR-02).
- *   - Dropdown Week hanya menampilkan label yang ada di config.weekLabels.
+ *   - Dropdown Week: W1-W52 (standar) — tidak bergantung config.weekLabels.
  *   - Tidak membuat 12 form grafik terpisah.
+ *   - Filter dropdown (Area, Category, Week), search, dan pagination batch 10.
  *   - Memanggil onStateChange setiap ada perubahan.
  *
  * Prinsip:
  *   - Tidak mengandung business logic.
  *   - Validasi menggunakan validateWeeklyChartRow/validateWeeklyChartData.
+ *   - Filter dan pagination hanya mempengaruhi tampilan, bukan state.
  */
 
 "use strict";
 
-import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STANDARD_WEEKS } from "../model/constants.js";
+import { AREA_ID_LIST, AREA_LABELS, CATEGORY_LIST, STANDARD_WEEKS, sortWeekLabelsChronologically, parseWeekLabel } from "../model/constants.js";
 import {
   getConfig,
   getWeeklyChartData,
@@ -29,6 +31,7 @@ import {
 } from "../model/state.js";
 import {
   validateWeeklyChartRow,
+  validateWeeklyChartData,
 } from "../model/validation.js";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +40,15 @@ import {
 
 let _onStateChange = () => {};
 let _editingKey    = null; // "areaId|category|week" saat row sedang diedit
+
+// Filter & pagination state (display-only — tidak mengubah data)
+let _filterArea     = "";
+let _filterCategory = "";
+let _filterWeek     = "";
+let _searchQuery    = "";
+let _visibleLimit   = 10;
+
+const PAGE_SIZE = 10;
 
 // ---------------------------------------------------------------------------
 // PUBLIC API
@@ -47,9 +59,48 @@ export function mountFormWeeklyChart(container, { onStateChange } = {}) {
   _render(container);
 }
 
-/** Dipanggil ulang oleh app.js setiap state berubah (misal weekLabels bertambah). */
+/** Dipanggil ulang oleh app.js setiap state berubah. */
 export function refreshFormWeeklyChart(container) {
   _render(container);
+}
+
+// ---------------------------------------------------------------------------
+// FILTERING & PAGINATION (pure — tidak mengubah state)
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter dan paginate data untuk tampilan.
+ * Exported untuk testability.
+ */
+export function filterRows(data, { filterArea, filterCategory, filterWeek, searchQuery }) {
+  let filtered = data;
+
+  if (filterArea) {
+    filtered = filtered.filter((r) => r.areaId === filterArea);
+  }
+  if (filterCategory) {
+    filtered = filtered.filter((r) => r.category === filterCategory);
+  }
+  if (filterWeek) {
+    filtered = filtered.filter((r) => r.week === filterWeek);
+  }
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter((r) => {
+      const areaLabel = (AREA_LABELS[r.areaId] || r.areaId || "").toLowerCase();
+      const cat = (r.category || "").toLowerCase();
+      const week = (r.week || "").toLowerCase();
+      const plan = r.plan !== null && r.plan !== undefined ? String(r.plan) : "";
+      const actual = r.actual !== null && r.actual !== undefined ? String(r.actual) : "";
+      return areaLabel.includes(q) || cat.includes(q) || week.includes(q) || plan.includes(q) || actual.includes(q);
+    });
+  }
+
+  return filtered;
+}
+
+export function paginateRows(filtered, limit) {
+  return filtered.slice(0, limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -57,18 +108,55 @@ export function refreshFormWeeklyChart(container) {
 // ---------------------------------------------------------------------------
 
 function _render(container) {
-  const cfg  = getConfig();
-  const data = getWeeklyChartData();
-  const weekLabels = cfg.weekLabels || [];
-  
+  const allData = getWeeklyChartData();
+
+  const filtered = filterRows(allData, {
+    filterArea: _filterArea,
+    filterCategory: _filterCategory,
+    filterWeek: _filterWeek,
+    searchQuery: _searchQuery,
+  });
+
+  const visible = paginateRows(filtered, _visibleLimit);
+  const hasMore = filtered.length > _visibleLimit;
+
+  // Collect unique weeks present in data for the Week filter dropdown
+  const weeksInData = [...new Set(allData.map((r) => r.week).filter(Boolean))].sort((a, b) => {
+    const pa = parseWeekLabel(a);
+    const pb = parseWeekLabel(b);
+    return (pa.weekNumber ?? 999) - (pb.weekNumber ?? 999);
+  });
+
   // Jika sedang menambah row baru (editingKey === "NEW"), tampilkan inline form di baris pertama
   const renderNewRow = _editingKey === "NEW" ? _renderInlineFormRow() : "";
 
+  const activeFilterCount = [_filterArea, _filterCategory, _filterWeek, _searchQuery].filter(Boolean).length;
+  const filterSummary = activeFilterCount > 0
+    ? `${filtered.length} dari ${allData.length} baris`
+    : `${allData.length} baris`;
+
   container.innerHTML = `
+    <!-- Filter bar -->
+    <div class="wc-filter-bar">
+      <select id="wc-filter-area" class="form-select wc-filter-select" title="Filter Area">
+        <option value="">Semua Area</option>
+        ${AREA_ID_LIST.map((id) => `<option value="${id}" ${_filterArea === id ? "selected" : ""}>${AREA_LABELS[id]}</option>`).join("")}
+      </select>
+      <select id="wc-filter-category" class="form-select wc-filter-select" title="Filter Category">
+        <option value="">Semua Category</option>
+        ${CATEGORY_LIST.map((c) => `<option value="${c}" ${_filterCategory === c ? "selected" : ""}>${c}</option>`).join("")}
+      </select>
+      <select id="wc-filter-week" class="form-select wc-filter-select" title="Filter Week">
+        <option value="">Semua Week</option>
+        ${weeksInData.map((w) => `<option value="${_esc(w)}" ${_filterWeek === w ? "selected" : ""}>${_esc(w)}</option>`).join("")}
+      </select>
+      <input type="text" id="wc-search" class="form-input wc-filter-search" placeholder="Cari..." value="${_esc(_searchQuery)}" title="Cari Area, Category, Week, Plan, atau Actual" />
+    </div>
+
     <!-- Toolbar / Add row -->
     <div class="table-toolbar">
       <span class="text-muted">
-        ${data.length} baris · ${weekLabels.length} minggu dikonfigurasi
+        ${filterSummary}
       </span>
       <span class="toolbar-spacer"></span>
       <button class="btn btn--primary btn--sm" id="wc-add-btn" type="button" ${_editingKey ? 'disabled' : ''}>
@@ -94,10 +182,12 @@ function _render(container) {
         </thead>
         <tbody id="wc-tbody">
           ${renderNewRow}
-          ${_renderRows(data)}
+          ${_renderRows(visible)}
         </tbody>
       </table>
     </div>
+
+    ${hasMore ? `<div class="wc-see-more-wrap"><button class="btn btn--secondary btn--sm" id="wc-see-more-btn" type="button">See More (${filtered.length - _visibleLimit} tersisa)</button></div>` : ""}
   `;
 
   _bindEvents(container);
@@ -105,14 +195,14 @@ function _render(container) {
 
 function _renderRows(data) {
   if (data.length === 0 && !_editingKey) return `<tr><td colspan="6" class="empty-state">Belum ada data.</td></tr>`;
-  
+
   return data.map((row) => {
     const key = _rowKey(row);
     if (_editingKey === key) {
       // Render mode Edit (inline)
       return _renderInlineFormRow(row.areaId, row.category, row.week, row.plan, row.actual, true);
     }
-    
+
     // Render mode View
     const planDisplay   = row.plan   !== null && row.plan   !== undefined ? row.plan   : '<span class="text-muted">—</span>';
     const actualDisplay = row.actual !== null && row.actual !== undefined ? row.actual : '<span class="text-muted">—</span>';
@@ -133,14 +223,12 @@ function _renderRows(data) {
 }
 
 function _renderInlineFormRow(areaId = "", category = "", week = "", plan = null, actual = null, isEdit = false) {
-  const cfg  = getConfig();
-  // Ambil union dari config.weekLabels dan STANDARD_WEEKS agar dropdown W1-W52 selalu tersedia
-  const combinedWeeks = Array.from(new Set([...(cfg.weekLabels || []), ...STANDARD_WEEKS]));
-  
+  // Week options: W1-W52
+  const weekOpts = STANDARD_WEEKS.map((l) => `<option value="${_esc(l)}" ${l === week ? 'selected' : ''}>${_esc(l)}</option>`).join("");
+
   const areaOpts = AREA_ID_LIST.map((id) => `<option value="${id}" ${id === areaId ? 'selected' : ''}>${AREA_LABELS[id]}</option>`).join("");
   const catOpts  = CATEGORY_LIST.map((c) => `<option value="${c}" ${c === category ? 'selected' : ''}>${c}</option>`).join("");
-  const weekOpts = combinedWeeks.map((l) => `<option value="${_esc(l)}" ${l === week ? 'selected' : ''}>${_esc(l)}</option>`).join("");
-  
+
   const pVal = plan !== null ? plan : "";
   const aVal = actual !== null ? actual : "";
 
@@ -164,6 +252,44 @@ function _renderInlineFormRow(areaId = "", category = "", week = "", plan = null
 // ---------------------------------------------------------------------------
 
 function _bindEvents(container) {
+  // Filter dropdowns
+  container.querySelector("#wc-filter-area")?.addEventListener("change", (e) => {
+    _filterArea = e.target.value;
+    _visibleLimit = PAGE_SIZE;
+    _render(container);
+  });
+  container.querySelector("#wc-filter-category")?.addEventListener("change", (e) => {
+    _filterCategory = e.target.value;
+    _visibleLimit = PAGE_SIZE;
+    _render(container);
+  });
+  container.querySelector("#wc-filter-week")?.addEventListener("change", (e) => {
+    _filterWeek = e.target.value;
+    _visibleLimit = PAGE_SIZE;
+    _render(container);
+  });
+
+  // Search input
+  const searchInput = container.querySelector("#wc-search");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      _searchQuery = e.target.value;
+      _visibleLimit = PAGE_SIZE;
+      _render(container);
+      const newInput = container.querySelector("#wc-search");
+      if (newInput) {
+        newInput.focus();
+        newInput.setSelectionRange(_searchQuery.length, _searchQuery.length);
+      }
+    });
+  }
+
+  // See More button
+  container.querySelector("#wc-see-more-btn")?.addEventListener("click", () => {
+    _visibleLimit += PAGE_SIZE;
+    _render(container);
+  });
+
   // Add button
   container.querySelector("#wc-add-btn")?.addEventListener("click", () => {
     _openAddForm(container);
@@ -193,7 +319,7 @@ function _bindEvents(container) {
 function _openAddForm(container) {
   _editingKey = "NEW";
   _render(container);
-  
+
   // Focus ke input pertama
   setTimeout(() => container.querySelector("#wc-area")?.focus(), 50);
 }
@@ -201,7 +327,7 @@ function _openAddForm(container) {
 function _openEditForm(container, key) {
   _editingKey = key;
   _render(container);
-  
+
   // Focus ke input plan
   setTimeout(() => container.querySelector("#wc-plan")?.focus(), 50);
 }
@@ -212,9 +338,6 @@ function _closeForm(container) {
 }
 
 function _saveForm(container) {
-  const cfg = getConfig();
-  const weekLabels = cfg.weekLabels || [];
-
   const areaId   = container.querySelector("#wc-area").value;
   const category = container.querySelector("#wc-category").value;
   const week     = container.querySelector("#wc-week").value;
@@ -226,7 +349,7 @@ function _saveForm(container) {
   const actual = actRaw   === "" ? null : Number(actRaw);
 
   const row = { areaId, category, week, plan, actual };
-  const result = validateWeeklyChartRow(row, weekLabels);
+  const result = validateWeeklyChartRow(row);
 
   // Cek duplikat hanya saat add (editingKey = "NEW")
   if (_editingKey === "NEW") {
@@ -300,5 +423,5 @@ function _clearFormAlert(container) {
 function _rowKey(row) { return `${row.areaId}|${row.category}|${row.week}`; }
 
 function _esc(str) {
-  return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
