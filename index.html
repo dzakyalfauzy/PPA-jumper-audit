@@ -17,6 +17,10 @@
 
   <!-- PptxGenJS via CDN — diperlukan untuk Download PPTX di browser -->
   <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+
+  <!-- html2canvas & jsPDF via CDN — diperlukan untuk Download PDF di browser -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -33,7 +37,7 @@
       <div id="app-status-panel"></div>
       <div class="export-actions">
         <button class="btn btn--primary" id="btn-export-pptx" title="Download PowerPoint Editable (16:9)">Download PPTX</button>
-        <button class="btn btn--secondary" disabled title="Tersedia di Phase 7">Download PDF</button>
+        <button class="btn btn--secondary" id="btn-export-pdf" title="Download PDF (16:9)">Download PDF</button>
       </div>
     </div>
 

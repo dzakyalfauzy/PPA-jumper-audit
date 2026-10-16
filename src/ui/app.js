@@ -28,6 +28,7 @@ import { mountFormWeeklyChart, refreshFormWeeklyChart } from "./formWeeklyChart.
 import { mountFormRegister, refreshFormRegister } from "./formRegister.js";
 import { renderSlidePreview } from "../preview/slidePreview.js";
 import { exportToPowerPoint } from "../export/pptxExporter.js";
+import { exportToPdf } from "../export/pdfExporter.js";
 
 // ---------------------------------------------------------------------------
 // MODULE STATE
@@ -73,6 +74,24 @@ export function initApp() {
       } finally {
         exportPptxBtn.disabled = false;
         exportPptxBtn.textContent = "Download PPTX";
+      }
+    });
+  }
+
+  // Bind Export PDF button
+  const exportPdfBtn = document.getElementById("btn-export-pdf");
+  if (exportPdfBtn) {
+    exportPdfBtn.addEventListener("click", async () => {
+      try {
+        exportPdfBtn.disabled = true;
+        exportPdfBtn.textContent = "Mengunduh PDF...";
+        const currentState = getState();
+        await exportToPdf(currentState);
+      } catch (err) {
+        alert(`Gagal mengekspor PDF: ${err.message}`);
+      } finally {
+        exportPdfBtn.disabled = false;
+        exportPdfBtn.textContent = "Download PDF";
       }
     });
   }
@@ -141,8 +160,18 @@ function _updateStatusPanel(state) {
     }
   }
 
+  const exportPdfBtn = document.getElementById("btn-export-pdf");
+  if (exportPdfBtn) {
+    exportPdfBtn.disabled = hasErrors;
+    if (hasErrors) {
+      exportPdfBtn.title = "Export diblokir karena terdapat error validasi";
+    } else {
+      exportPdfBtn.title = "Download PDF (16:9)";
+    }
+  }
+
   if (!hasErrors && !hasWarnings) {
-    panel.innerHTML = `<div class="alert alert--info">✓ Tidak ada error. Preview aktif. Klik "Download PPTX" untuk mengunduh laporan editable.</div>`;
+    panel.innerHTML = `<div class="alert alert--info">✓ Tidak ada error. Preview aktif. Klik "Download PPTX" atau "Download PDF" untuk mengunduh laporan.</div>`;
     return;
   }
 
