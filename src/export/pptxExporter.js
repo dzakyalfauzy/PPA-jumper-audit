@@ -33,6 +33,7 @@ import {
 import { getAllChartSeries, getChartKey } from "../logic/chartData.js";
 import { CATEGORY_COLORS, ACTUAL_COLOR } from "../preview/chartRenderer.js";
 import { validateFullState } from "../model/validation.js";
+import { LOGO_VALE_BASE64, LOGO_MINDID_BASE64 } from "./logos.js";
 
 // Layout Widescreen 16:9
 export const SLIDE_W = 13.333;
@@ -222,18 +223,37 @@ function _buildHeader(slide, config, reportingWeekLabel) {
     line: { color: "1E3A8A" }
   });
 
-  slide.addText(config.title || "PPA JUMPER AUDIT", {
-    x: MARGIN, y: 0.05, w: 7.0, h: 0.40,
-    fontSize: 15, bold: true, color: "FFFFFF",
+  const title = (config.title || "PPA JUMPER AUDIT").trim();
+  const year = config.reportingYear != null ? String(config.reportingYear).trim() : "—";
+  const rawWeek = config.reportingWeek != null ? String(config.reportingWeek).trim() : "";
+  const weekNum = rawWeek.replace(/^W/i, "");
+  const weekLabel = weekNum !== "" && weekNum !== "—" ? `Week ${weekNum}` : "Week —";
+  const headerText = `${title} | ${weekLabel} - ${year}`;
+
+  slide.addText(headerText, {
+    x: MARGIN, y: 0.05, w: 9.5, h: 0.40,
+    fontSize: 14, bold: true, color: "FFFFFF",
     align: "left", valign: "middle"
   });
 
-  const metaText = `${config.plantArea || "Process Plant Area"}  |  Week ${config.reportingWeek || "—"} · ${config.reportingYear || "—"}  |  Period: ${reportingWeekLabel} (${config.reportingYear || "—"})`;
-  slide.addText(metaText, {
-    x: 7.3, y: 0.05, w: 5.8, h: 0.40,
-    fontSize: 10, bold: false, color: "E2E8F0",
-    align: "right", valign: "middle"
-  });
+  // Logos on the far right directly on the header bar (clean white corporate logos on navy background)
+  const logoH = 0.26;
+  const logoY = 0.17;
+  const valeW = 0.68;
+  const mindidW = 0.90;
+  const mindidX = 12.21;
+  const valeX = 11.33;
+
+  if (typeof slide.addImage === "function") {
+    slide.addImage({
+      data: `data:image/png;base64,${LOGO_VALE_BASE64}`,
+      x: valeX, y: logoY, w: valeW, h: logoH
+    });
+    slide.addImage({
+      data: `data:image/png;base64,${LOGO_MINDID_BASE64}`,
+      x: mindidX, y: logoY, w: mindidW, h: logoH
+    });
+  }
 }
 
 function _build12Charts(slide, pptx, allChartSeries, calculatedSummaries, displayWeekLabels) {
@@ -462,13 +482,34 @@ function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthor
 
   if (plcMetricResult.ok) {
     const pct = plcMetricResult.percentage !== null ? plcMetricResult.percentage.toFixed(1) : "—";
-    slide.addText(`${plcMetricResult.plcsWithActive} / ${plcMetricResult.totalPlcInScope}  (${pct}%)`, {
-      x: colX + 0.12, y: plcRatioY + 0.24, w: colW - 0.24, h: 0.34,
-      fontSize: 16, bold: true, color: "0F172A"
+    const halfW = (colW - 0.36) / 2;
+
+    // Sisi Kiri: 7 / 69
+    slide.addText(`${plcMetricResult.plcsWithActive} / ${plcMetricResult.totalPlcInScope}`, {
+      x: colX + 0.12, y: plcRatioY + 0.22, w: halfW, h: 0.36,
+      fontSize: 16, bold: true, color: "0F172A", align: "left", valign: "top"
     });
     slide.addText("PLCs with active jumper / Total PLCs in Scope", {
-      x: colX + 0.12, y: plcRatioY + 0.60, w: colW - 0.24, h: 0.16,
-      fontSize: 8, color: "64748B"
+      x: colX + 0.12, y: plcRatioY + 0.58, w: halfW, h: 0.24,
+      fontSize: 7.5, bold: true, color: "64748B", align: "left", valign: "top"
+    });
+
+    // Divider tengah
+    const divX = colX + 0.12 + halfW + 0.05;
+    slide.addShape("line", {
+      x: divX, y: plcRatioY + 0.22, w: 0, h: 0.56,
+      line: { color: "E2E8F0", width: 1 }
+    });
+
+    // Sisi Kanan: 89.9% (lebih menonjol)
+    const rightX = divX + 0.07;
+    slide.addText(`${pct}%`, {
+      x: rightX, y: plcRatioY + 0.18, w: halfW, h: 0.40,
+      fontSize: 22, bold: true, color: "1E3A8A", align: "right", valign: "top"
+    });
+    slide.addText("PLCs without active jumper", {
+      x: rightX, y: plcRatioY + 0.58, w: halfW, h: 0.24,
+      fontSize: 7.5, bold: true, color: "64748B", align: "right", valign: "top"
     });
   } else {
     slide.addText(plcMetricResult.reason || "Belum tersedia", {

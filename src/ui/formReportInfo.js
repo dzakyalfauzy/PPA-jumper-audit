@@ -72,6 +72,7 @@ export function mountFormReportInfo(containerInfo, containerArea, { onStateChang
  */
 export function setDiscrepancyWarnings(warnings, containerArea) {
   _discrepancyWarnings = warnings || [];
+  _populateAreaSummary(containerArea);
   _renderDiscrepancyWarnings(containerArea);
 }
 
@@ -99,12 +100,6 @@ function _buildReportInfoHTML() {
         </label>
         <input type="text" id="ri-title" class="form-input" placeholder="Misal: PPA Jumper Audit Week-40 2026" />
         <div class="field-error" id="err-title"></div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="ri-plant-area">Plant Area <span class="required">*</span></label>
-        <input type="text" id="ri-plant-area" class="form-input" placeholder="Misal: PP Area" />
-        <div class="field-error" id="err-plant-area"></div>
       </div>
 
       <div class="form-group">
@@ -139,10 +134,10 @@ function _buildAreaSummaryHTML() {
         type="number"
         id="area-${areaId}"
         data-area="${areaId}"
-        class="area-card__input"
-        min="0"
-        step="1"
-        placeholder="Manual input"
+        class="area-card__input area-card__input--readonly"
+        readonly
+        tabindex="-1"
+        placeholder="0"
       />
       <div class="field-error" id="area-err-${areaId}"></div>
       <div class="field-warning" id="area-disc-${areaId}"></div>
@@ -155,7 +150,7 @@ function _buildAreaSummaryHTML() {
       ${areaSummaryCards}
     </div>
     <p class="text-muted" style="font-size: 0.85rem; margin-top: 8px;">
-      Nilai Area Summary adalah input manual (tidak ditimpa Register). Weekly Chart Data mengatur Plan dan Actual.
+      Nilai Area Summary dihitung otomatis dari data Actual pada Weekly Chart untuk minggu pelaporan yang dipilih.
     </p>
   `;
 }
@@ -166,24 +161,13 @@ function _buildAreaSummaryHTML() {
 
 function _bindReportInfoEvents(container) {
   _bindInput(container, "#ri-title",     (v) => updateConfig({ title: v }), "err-title");
-  _bindInput(container, "#ri-plant-area",(v) => updateConfig({ plantArea: v }), "err-plant-area");
   _bindNumberInput(container, "#ri-year", (v) => updateConfig({ reportingYear: v }), "err-year");
   _bindNumberInput(container, "#ri-week", (v) => updateConfig({ reportingWeek: v }), "err-week");
   _bindNumberInput(container, "#ri-plc-total", (v) => updateConfig({ totalPlcInScope: v }), "err-plc-total");
 }
 
 function _bindAreaSummaryEvents(container) {
-  AREA_ID_LIST.forEach((areaId) => {
-    const input = container.querySelector(`#area-${areaId}`);
-    if (!input) return;
-    input.addEventListener("change", () => {
-      const raw = input.value.trim();
-      const val = raw === "" ? null : parseInt(raw, 10);
-      updateAreaSummary(areaId, val);
-      _validateAreaInput(container, areaId, val);
-      _onStateChange();
-    });
-  });
+  // Area Summary kini read-only (dihitung otomatis dari Actual Weekly Chart)
 }
 
 function _bindInput(container, selector, updater, errId) {
@@ -223,17 +207,20 @@ function _populateReportInfo(container) {
   const cfg = getConfig();
 
   _setVal(container, "#ri-title",     cfg.title);
-  _setVal(container, "#ri-plant-area",cfg.plantArea);
   _setVal(container, "#ri-year",      cfg.reportingYear ?? "");
   _setVal(container, "#ri-week",      cfg.reportingWeek ?? "");
   _setVal(container, "#ri-plc-total", cfg.totalPlcInScope ?? "");
+}
+
+export function refreshAreaSummaryDisplay(container) {
+  _populateAreaSummary(container);
 }
 
 function _populateAreaSummary(container) {
   const summary = getAreaSummary();
   summary.forEach(({ areaId, jumperCount }) => {
     const el = container.querySelector(`#area-${areaId}`);
-    if (el) el.value = jumperCount !== null ? jumperCount : "";
+    if (el) el.value = jumperCount !== null ? jumperCount : "0";
   });
 }
 
@@ -299,13 +286,12 @@ function _renderDiscrepancyWarnings(container) {
   banner.innerHTML = `
     <div class="alert alert--warning">
       <strong>⚠ Discrepancy Warning:</strong>
-      Nilai Area Summary manual berbeda dari hitungan Jumper Authorized Register (aktif).
-      Nilai manual <strong>tidak diubah</strong>.
+      Nilai Area Summary (dari Actual Weekly Chart) berbeda dari hitungan Jumper Register (aktif).
       <ul>
         ${discrepant.map((w) => `
           <li>
             <strong>${AREA_LABELS[w.areaId] || w.areaId}</strong>:
-            manual = ${w.manualCount}, register = ${w.computedCount}
+            Area Summary = ${w.manualCount ?? 0}, register = ${w.computedCount}
           </li>
         `).join("")}
       </ul>

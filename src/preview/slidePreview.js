@@ -176,10 +176,12 @@ function _buildSlideHTML(state, computed) {
     nonAuthorizedJumpers,
   } = computed;
 
-  const title    = config.title    || "—";
-  const area     = config.plantArea || "—";
-  const year     = config.reportingYear  ?? "—";
-  const week     = config.reportingWeek  ?? "—";
+  const title    = (config.title || "PPA JUMPER AUDIT").trim();
+  const year     = config.reportingYear != null ? String(config.reportingYear).trim() : "—";
+  const rawWeek  = config.reportingWeek != null ? String(config.reportingWeek).trim() : "";
+  const weekNum  = rawWeek.replace(/^W/i, "");
+  const weekLabel = weekNum !== "" && weekNum !== "—" ? `Week ${weekNum}` : "Week —";
+  const headerTitle = `${title} | ${weekLabel} - ${year}`;
 
   // Overflow warning untuk Jumper Without MOC/Authorized Jumper (Non-Authorized)
   const jumperWithoutMocCount = nonAuthorizedJumpers.length;
@@ -194,9 +196,10 @@ function _buildSlideHTML(state, computed) {
 
       <!-- HEADER ── -->
       <div class="slide-header">
-        <div class="slide-header__title">${_esc(title)}</div>
-        <div class="slide-header__meta">
-          ${_esc(area)} &nbsp;|&nbsp; Week ${_esc(String(week))} · ${_esc(String(year))}
+        <div class="slide-header__title">${_esc(headerTitle)}</div>
+        <div class="slide-header__logos">
+          <img src="assets/logo_vale.png" alt="Vale" class="slide-header__logo-img" />
+          <img src="assets/logo_mindid.png" alt="MIND ID" class="slide-header__logo-img" />
         </div>
       </div>
 
@@ -346,12 +349,16 @@ function _buildPlcsWithoutActiveMetric(plcMetricResult) {
   }
   const pct = plcMetricResult.percentage !== null ? plcMetricResult.percentage.toFixed(1) : "—";
   return `
-    <div class="slide-plc-ratio">
-      <div class="slide-plc-ratio__fraction">
-        ${plcMetricResult.plcsWithActive} / ${plcMetricResult.totalPlcInScope}
+    <div class="slide-plc-kpi-card">
+      <div class="slide-plc-kpi-left">
+        <div class="slide-plc-kpi-val">${plcMetricResult.plcsWithActive} / ${plcMetricResult.totalPlcInScope}</div>
+        <div class="slide-plc-kpi-lbl">PLCs with active jumper / Total PLCs in Scope</div>
       </div>
-      <div class="slide-plc-ratio__pct">${pct}%</div>
-      <div class="slide-plc-ratio__label">PLCs with active jumper / Total PLCs in Scope</div>
+      <div class="slide-plc-kpi-divider"></div>
+      <div class="slide-plc-kpi-right">
+        <div class="slide-plc-kpi-pct">${pct}%</div>
+        <div class="slide-plc-kpi-lbl">PLCs without active jumper</div>
+      </div>
     </div>
   `;
 }

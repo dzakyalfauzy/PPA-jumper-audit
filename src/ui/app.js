@@ -134,8 +134,8 @@ function _onStateChange() {
 
 function _updateDiscrepancyWarnings(state) {
   const disc = areaSummaryDiscrepancy(state.areaSummary, state.jumperRegister);
-  const riContainer = document.getElementById("section-report-info");
-  if (riContainer) setDiscrepancyWarnings(disc.warnings, riContainer);
+  const areaContainer = document.getElementById("section-area-summary");
+  if (areaContainer) setDiscrepancyWarnings(disc.warnings, areaContainer);
 }
 
 // ---------------------------------------------------------------------------

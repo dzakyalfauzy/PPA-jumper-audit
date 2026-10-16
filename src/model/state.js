@@ -16,6 +16,7 @@
 "use strict";
 
 import { AREA_ID_LIST, AUTH_TYPE } from "./constants.js";
+import { calculateAreaSummariesFromWeeklyChart } from "../logic/selectors.js";
 
 // ---------------------------------------------------------------------------
 // STATE AWAL
@@ -128,6 +129,26 @@ export function getJumperRegister() {
 // ---------------------------------------------------------------------------
 
 /**
+ * Menyinkronkan nilai areaSummary secara otomatis dari Weekly Chart Data (nilai Actual)
+ * berdasarkan Reporting Week yang sedang dipilih.
+ */
+export function syncAreaSummaryFromWeeklyChart() {
+  if (!_state || !_state.weeklyChartData || !_state.config) return;
+  const summaries = calculateAreaSummariesFromWeeklyChart(
+    _state.weeklyChartData,
+    _state.config.reportingWeek,
+    _state.config.reportingYear
+  );
+  _state = {
+    ..._state,
+    areaSummary: AREA_ID_LIST.map((areaId) => ({
+      areaId,
+      jumperCount: summaries[areaId]?.totalActual ?? null,
+    })),
+  };
+}
+
+/**
  * Memperbarui satu atau lebih field config.
  * Field yang tidak disertakan tidak berubah.
  * @param {Partial<config>} patch
@@ -137,6 +158,9 @@ export function updateConfig(patch) {
     ..._state,
     config: { ..._state.config, ...patch },
   };
+  if (patch.reportingWeek !== undefined || patch.reportingYear !== undefined) {
+    syncAreaSummaryFromWeeklyChart();
+  }
 }
 
 /**
@@ -169,9 +193,11 @@ export function upsertWeeklyChartRow(row) {
     const updated = [..._state.weeklyChartData];
     updated[existing] = { ...row };
     _state = { ..._state, weeklyChartData: updated };
+    syncAreaSummaryFromWeeklyChart();
     return { replaced: true };
   }
   _state = { ..._state, weeklyChartData: [..._state.weeklyChartData, { ...row }] };
+  syncAreaSummaryFromWeeklyChart();
   return { replaced: false };
 }
 
@@ -190,7 +216,9 @@ export function deleteWeeklyChartRow(areaId, category, week) {
       (d) => !(d.areaId === areaId && d.category === category && d.week === week)
     ),
   };
-  return { deleted: _state.weeklyChartData.length < before };
+  const deleted = _state.weeklyChartData.length < before;
+  if (deleted) syncAreaSummaryFromWeeklyChart();
+  return { deleted };
 }
 
 /**
@@ -321,7 +349,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       description: "Shortbranches installed on PLC D3C, FSL (Flow Switch Low) Feed conv. Dryer 3",
       equipmentTag: null,
       installedDate: "2026-03-07",
-      dueDate: null,
+      dueDate: "2026-10-31",
       authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
@@ -332,7 +360,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       description: "Shortbranches installed on PLC D3C MainFlame On Interlock to TR ESP",
       equipmentTag: null,
       installedDate: "2026-04-18",
-      dueDate: null,
+      dueDate: "2026-11-15",
       authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
@@ -343,7 +371,7 @@ export const WEEK_40_BASELINE = Object.freeze({
       description: "Forces installed on PLC CMS1 Level HiHi Switch Surge Bin - Digital_Alarms",
       equipmentTag: null,
       installedDate: "2026-07-04",
-      dueDate: null,
+      dueDate: "2026-12-31",
       authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
@@ -414,6 +442,7 @@ export function loadPersistedState() {
           }
           parsed.jumperRegister = _ensureAuthorizationType(parsed.jumperRegister);
           _state = parsed;
+          syncAreaSummaryFromWeeklyChart();
           savePersistedState();
           return true;
         }
@@ -437,6 +466,7 @@ export function savePersistedState() {
 
 export function resetToBaseline() {
   _state = JSON.parse(JSON.stringify(WEEK_40_BASELINE));
+  syncAreaSummaryFromWeeklyChart();
   savePersistedState();
 }
 

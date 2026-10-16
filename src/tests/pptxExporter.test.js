@@ -34,10 +34,12 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
           texts: [],
           tables: [],
           charts: [],
+          images: [],
           addShape(type, opts) { this.shapes.push({ type, opts }); },
           addText(txt, opts) { this.texts.push({ txt, opts }); },
           addTable(rows, opts) { this.tables.push({ rows, opts }); },
           addChart(types, data, opts) { this.charts.push({ types, data, opts }); },
+          addImage(opts) { this.images.push(opts); },
         };
         this.slides.push(s);
         return s;
@@ -387,11 +389,16 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
     expect(plcRatioTitle).toBeDefined();
 
     // Pembilang harus 2 (plcsWithActive), total 10, persentase 80.0%
-    const plcRatioValue = slide.texts.find((t) => typeof t.txt === "string" && t.txt.includes("2 / 10"));
+    const plcRatioValue = slide.texts.find((t) => typeof t.txt === "string" && t.txt === "2 / 10");
     expect(plcRatioValue).toBeDefined();
-    expect(plcRatioValue.txt).toBe("2 / 10  (80.0%)");
+
+    const plcRatioPct = slide.texts.find((t) => typeof t.txt === "string" && t.txt === "80.0%");
+    expect(plcRatioPct).toBeDefined();
 
     const plcRatioSubLabel = slide.texts.find((t) => t.txt === "PLCs with active jumper / Total PLCs in Scope");
     expect(plcRatioSubLabel).toBeDefined();
+
+    const plcWithoutActiveLabel = slide.texts.find((t) => t.txt === "PLCs without active jumper");
+    expect(plcWithoutActiveLabel).toBeDefined();
   });
 });

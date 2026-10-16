@@ -315,9 +315,11 @@ describe("renderSlidePreview — layout revisi (tanpa DOM browser)", () => {
     expect(html).not.toContain("slide-kpi-box");
   });
 
-  test("header menampilkan Week · Year dari config (bukan chip weekLabels)", () => {
+  test("header menampilkan format baru: Title | Week X - Year dan official logos", () => {
     const html = render(previewState);
-    expect(html).toContain("Week 40 · 2026");
+    expect(html).toContain("Week 40 - 2026");
+    expect(html).toContain("assets/logo_vale.png");
+    expect(html).toContain("assets/logo_mindid.png");
     expect(html).not.toContain("Chart Week Labels");
   });
 

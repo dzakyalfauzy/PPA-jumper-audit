@@ -24,6 +24,7 @@ import {
   PLC_BY_AREA,
   JUMPER_STATUS,
   EXPIRING_SOON_MAX_DAYS,
+  AUTH_TYPE,
   AUTH_TYPE_LIST,
 } from "./constants.js";
 import { getJumperStatus } from "../logic/selectors.js";
@@ -90,9 +91,7 @@ export function validateConfig(config) {
     errors.push("Report Title wajib diisi dan tidak boleh kosong.");
   }
 
-  if (!isNonEmptyString(config.plantArea)) {
-    errors.push("Plant Area wajib diisi dan tidak boleh kosong.");
-  }
+  // Plant Area dihilangkan dari Report Setup (Revision 3.A)
 
   if (isNullOrUndefined(config.reportingYear)) {
     errors.push("Reporting Year wajib diisi.");
@@ -380,8 +379,15 @@ export function validateJumperRecord(record, existingIds = new Set()) {
     );
   }
 
-  if (!isNullOrUndefined(record.dueDate) && record.dueDate !== "" &&
-      !isValidIsoDate(record.dueDate)) {
+  // Due Date: Wajib untuk Authorized, Opsional untuk Non-Authorized
+  const hasDueDate = !isNullOrUndefined(record.dueDate) && record.dueDate !== "";
+  if (record.authorizationType === AUTH_TYPE.AUTHORIZED) {
+    if (!hasDueDate || !isValidIsoDate(record.dueDate)) {
+      errors.push(
+        `${ctx}: Due Date wajib diisi untuk Authorized Jumper dengan format YYYY-MM-DD.`
+      );
+    }
+  } else if (hasDueDate && !isValidIsoDate(record.dueDate)) {
     errors.push(
       `${ctx}: Due Date tidak valid ("${record.dueDate}"). ` +
       `Gunakan format YYYY-MM-DD atau kosongkan.`
@@ -406,7 +412,7 @@ export function validateJumperRecord(record, existingIds = new Set()) {
     warnings.push(
       `${ctx}: Due Date mendekati (status: Expiring Soon — ≤ ${EXPIRING_SOON_MAX_DAYS} hari).`
     );
-  } else if (!isValidIsoDate(record.dueDate)) {
+  } else if (!isValidIsoDate(record.dueDate) && record.authorizationType === AUTH_TYPE.AUTHORIZED) {
     warnings.push(
       `${ctx}: Due Date kosong/tidak valid — status tidak dapat ditentukan.`
     );

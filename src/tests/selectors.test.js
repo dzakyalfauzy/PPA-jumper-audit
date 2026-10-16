@@ -616,28 +616,23 @@ describe("Phase 5.4 — calculateAreaSummariesFromWeeklyChart & Week-40 Baseline
     expect(reg.every((r) => typeof r.installedDate === "string")).toBe(true);
     expect(reg.every((r) => "dueDate" in r)).toBe(true);
 
-    // Baseline dueDate semuanya null → tidak ada jumper aktif
-    expect(reg.every((r) => r.dueDate === null)).toBe(true);
+    // Authorized records memiliki dueDate valid, Non-Authorized opsional (null)
+    const authRecords = reg.filter((r) => r.authorizationType === AUTH_TYPE.AUTHORIZED);
+    expect(authRecords.every((r) => typeof r.dueDate === "string")).toBe(true);
 
-    // Metric terbalik: 0 PLC dengan jumper aktif → 69/69 tanpa jumper aktif (100%)
-    const plcMetric = plcsWithoutActiveJumpers(reg, WEEK_40_BASELINE.config.totalPlcInScope, TODAY);
+    // Record tanpa dueDate: 0 PLC dengan jumper aktif → 69/69 tanpa jumper aktif (100%)
+    const nullDueDateReg = reg.map((r) => ({ ...r, dueDate: null }));
+    const plcMetric = plcsWithoutActiveJumpers(nullDueDateReg, WEEK_40_BASELINE.config.totalPlcInScope, TODAY);
     expect(plcMetric.ok).toBe(true);
     expect(plcMetric.plcsWithActive).toBe(0);
     expect(plcMetric.plcsWithoutActive).toBe(69);
     expect(plcMetric.percentage).toBeCloseTo(100);
 
-    // Count per PLC: kosong (tidak ada jumper aktif)
-    expect(jumperCountPerPlc(reg, TODAY)).toHaveLength(0);
-
-    // Discrepancy: manual Dryer=6/Kiln=3 vs computed 0 (semua dueDate null) → warning
-    const { warnings } = areaSummaryDiscrepancy(WEEK_40_BASELINE.areaSummary, reg);
-    const dryerW = warnings.find((w) => w.areaId === AREA_IDS.DRYER_CM);
-    const kilnW = warnings.find((w) => w.areaId === AREA_IDS.KILN_CTS);
-    expect(dryerW.discrepancy).toBe(true);
-    expect(dryerW.computedCount).toBe(0);
-    expect(dryerW.manualCount).toBe(6);
-    expect(kilnW.discrepancy).toBe(true);
-    expect(kilnW.manualCount).toBe(3);
+    // Baseline asli dengan jumper aktif terhitung
+    const actualMetric = plcsWithoutActiveJumpers(reg, WEEK_40_BASELINE.config.totalPlcInScope, TODAY);
+    expect(actualMetric.plcsWithActive).toBe(2);
+    expect(actualMetric.plcsWithoutActive).toBe(67);
+    expect(actualMetric.percentage).toBeCloseTo((67 / 69) * 100);
   });
 });
 

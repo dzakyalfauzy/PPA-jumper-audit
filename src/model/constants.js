@@ -162,6 +162,11 @@ export const AUTH_TYPE_LIST = Object.freeze([
   AUTH_TYPE.NON_AUTHORIZED,
 ]);
 
+export const AUTH_TYPE_COLORS = Object.freeze({
+  [AUTH_TYPE.AUTHORIZED]:     { bg: "#DBEAFE", text: "#1E40AF" },
+  [AUTH_TYPE.NON_AUTHORIZED]: { bg: "#F3E8FF", text: "#6B21A8" },
+});
+
 // ---------------------------------------------------------------------------
 // JUMPER STATUS — 3-status system berdasarkan Due Date
 // ---------------------------------------------------------------------------

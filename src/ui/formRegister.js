@@ -29,6 +29,7 @@ import {
   EXPIRING_SOON_MAX_DAYS,
   AUTH_TYPE,
   AUTH_TYPE_LIST,
+  AUTH_TYPE_COLORS,
 } from "../model/constants.js";
 import {
   getJumperRegister,
@@ -49,6 +50,8 @@ import { getJumperStatus } from "../logic/selectors.js";
 let _onStateChange = () => {};
 let _editingId     = null; // jumperId yang sedang diedit, null = add mode
 let _searchQuery   = ""; // text filter local UI
+let _currentPage   = 1;
+const PAGE_SIZE    = 10;
 
 // ---------------------------------------------------------------------------
 // PUBLIC API
@@ -79,6 +82,14 @@ function _render(container) {
       (r.authorizationType && r.authorizationType.toLowerCase().includes(q))
     );
   }
+
+  const totalItems = data.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if (_currentPage > totalPages) _currentPage = totalPages;
+  if (_currentPage < 1) _currentPage = 1;
+
+  const startIndex = (_currentPage - 1) * PAGE_SIZE;
+  const pageData = data.slice(startIndex, startIndex + PAGE_SIZE);
 
   const unclassifiedCount = getJumperRegister().filter(
     (r) => !r.authorizationType || !AUTH_TYPE_LIST.includes(r.authorizationType)
@@ -126,10 +137,22 @@ function _render(container) {
           </tr>
         </thead>
         <tbody id="reg-tbody">
-          ${_renderRows(data)}
+          ${_renderRows(pageData)}
         </tbody>
       </table>
     </div>
+
+    <!-- pagination -->
+    <div class="pagination-bar" style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:6px 0;flex-wrap:wrap;gap:8px;">
+      <span class="text-muted" style="font-size:0.875rem;">
+        Menampilkan ${totalItems === 0 ? 0 : startIndex + 1}–${Math.min(startIndex + PAGE_SIZE, totalItems)} dari ${totalItems} data (Halaman ${_currentPage} dari ${totalPages})
+      </span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn--secondary btn--sm" id="reg-page-prev" type="button" ${_currentPage <= 1 ? "disabled" : ""}>« Sebelumnya</button>
+        <button class="btn btn--secondary btn--sm" id="reg-page-next" type="button" ${_currentPage >= totalPages ? "disabled" : ""}>Berikutnya »</button>
+      </div>
+    </div>
+
     ${getJumperRegister().length === 0 ? '<div class="empty-state">Belum ada data jumper. Klik "+ Tambah Jumper" untuk mulai.</div>' : ""}
 
     <!-- Modal (hidden by default) -->
@@ -164,10 +187,10 @@ function _statusBadge(dueDate) {
 
 function _authTypeBadge(authorizationType) {
   if (authorizationType === AUTH_TYPE.AUTHORIZED) {
-    return `<span style="background:#DBEAFE;color:#1E40AF;padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">Authorized</span>`;
+    return `<span style="background:${AUTH_TYPE_COLORS[AUTH_TYPE.AUTHORIZED].bg};color:${AUTH_TYPE_COLORS[AUTH_TYPE.AUTHORIZED].text};padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">Authorized</span>`;
   }
   if (authorizationType === AUTH_TYPE.NON_AUTHORIZED) {
-    return `<span style="background:#FEF3C7;color:#92400E;padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">Non-Authorized</span>`;
+    return `<span style="background:${AUTH_TYPE_COLORS[AUTH_TYPE.NON_AUTHORIZED].bg};color:${AUTH_TYPE_COLORS[AUTH_TYPE.NON_AUTHORIZED].text};padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;">Non-Authorized</span>`;
   }
   return `<span style="background:#FEE2E2;color:#991B1B;padding:2px 10px;border-radius:10px;font-weight:600;white-space:nowrap;" title="Klik Edit untuk memilih klasifikasi">Perlu Klasifikasi</span>`;
 }
@@ -274,7 +297,7 @@ function _buildModalForm() {
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="rf-due-date">Due Date <span class="text-muted" style="text-transform:none;font-weight:400;">(opsional)</span></label>
+        <label class="form-label" for="rf-due-date">Due Date <span id="rf-due-date-req" class="text-muted" style="text-transform:none;font-weight:400;">(opsional)</span></label>
         <input type="date" id="rf-due-date" class="form-input" />
         <div class="field-error" id="rf-err-due-date"></div>
         <div class="text-muted" style="font-size:0.85em;">Status (Active / Expiring Soon / Expired) dihitung otomatis.</div>
@@ -346,6 +369,25 @@ function _bindEvents(container) {
   if (areaSel) {
     areaSel.addEventListener("change", () => _populatePlcOptions(container));
   }
+
+  // Auth Type change — dynamically update Due Date requirement indicator
+  const authSel = container.querySelector("#rf-auth-type");
+  if (authSel) {
+    authSel.addEventListener("change", () => _updateDueDateRequirement(container));
+  }
+
+  // Pagination buttons
+  container.querySelector("#reg-page-prev")?.addEventListener("click", () => {
+    if (_currentPage > 1) {
+      _currentPage--;
+      _render(container);
+    }
+  });
+
+  container.querySelector("#reg-page-next")?.addEventListener("click", () => {
+    _currentPage++;
+    _render(container);
+  });
 
   // ID input — hanya boleh angka
   const idInput = container.querySelector("#rf-id");
@@ -425,6 +467,23 @@ function _closeModal(container) {
 // POPULATE / CLEAR MODAL
 // ---------------------------------------------------------------------------
 
+function _updateDueDateRequirement(container) {
+  const authType = container.querySelector("#rf-auth-type")?.value;
+  const reqEl = container.querySelector("#rf-due-date-req");
+  if (!reqEl) return;
+  if (authType === AUTH_TYPE.AUTHORIZED) {
+    reqEl.className = "required";
+    reqEl.style.textTransform = "";
+    reqEl.style.fontWeight = "";
+    reqEl.textContent = "* (wajib)";
+  } else {
+    reqEl.className = "text-muted";
+    reqEl.style.textTransform = "none";
+    reqEl.style.fontWeight = "400";
+    reqEl.textContent = "(opsional)";
+  }
+}
+
 function _populateModal(container, record) {
   _setField(container, "#rf-id",          record.jumperId          ?? "");
   _setField(container, "#rf-area",        record.areaId            ?? "");
@@ -439,6 +498,7 @@ function _populateModal(container, record) {
   _setField(container, "#rf-equipment",   record.equipmentTag      ?? "");
   _setField(container, "#rf-installed",   record.installedDate     ?? "");
   _setField(container, "#rf-due-date",    record.dueDate           ?? "");
+  _updateDueDateRequirement(container);
 }
 
 function _clearModal(container) {
@@ -447,6 +507,7 @@ function _clearModal(container) {
   fields.forEach((sel) => _setField(container, sel, ""));
   // PLC dikosongkan dan dinonaktifkan sampai area dipilih
   _populatePlcOptions(container, null);
+  _updateDueDateRequirement(container);
 }
 
 function _setField(container, selector, value) {

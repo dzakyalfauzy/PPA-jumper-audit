@@ -107,10 +107,9 @@ describe("validateConfig", () => {
     expect(result.errors.some((e) => e.includes("Report Title"))).toBe(true);
   });
 
-  test("plantArea kosong menghasilkan error", () => {
+  test("plantArea kosong diabaikan (sudah dihapus dari Report Setup)", () => {
     const result = validateConfig(validConfig({ plantArea: "" }));
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Plant Area"))).toBe(true);
+    expect(result.valid).toBe(true);
   });
 
   test("reportingYear null menghasilkan error", () => {
@@ -416,11 +415,39 @@ describe("validateJumperRecord", () => {
     expect(result.errors.some((e) => e.includes("Installed Date"))).toBe(true);
   });
 
-  test("dueDate null valid (opsional)", () => {
-    const result = validateJumperRecord(validJumperRecord({ dueDate: null }));
+  test("1. Authorized + valid Due Date: accepted", () => {
+    const result = validateJumperRecord(validJumperRecord({
+      authorizationType: AUTH_TYPE.AUTHORIZED,
+      dueDate: "2026-12-31"
+    }));
     expect(result.valid).toBe(true);
-    // Warning: status tidak dapat ditentukan
-    expect(result.warnings.some((w) => w.includes("Due Date kosong"))).toBe(true);
+  });
+
+  test("2. Authorized + missing Due Date: rejected", () => {
+    const result = validateJumperRecord(validJumperRecord({
+      authorizationType: AUTH_TYPE.AUTHORIZED,
+      dueDate: null
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("Due Date wajib diisi untuk Authorized"))).toBe(true);
+  });
+
+  test("3. Non-Authorized + valid Due Date: accepted", () => {
+    const result = validateJumperRecord(validJumperRecord({
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
+      dueDate: "2026-12-31"
+    }));
+    expect(result.valid).toBe(true);
+  });
+
+  test("4. Non-Authorized + missing Due Date: accepted", () => {
+    const result = validateJumperRecord(validJumperRecord({
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
+      dueDate: null
+    }));
+    expect(result.valid).toBe(true);
+    // Tidak menghasilkan error dan tidak menghasilkan warning due date kosong
+    expect(result.errors).toHaveLength(0);
   });
 
   test("dueDate format salah menghasilkan error", () => {
@@ -496,13 +523,13 @@ describe("validateFullState", () => {
     expect(result.warnings.some((w) => w.includes("OQ-01"))).toBe(false);
   });
 
-  test("state dengan jumper register valid → valid true (dueDate null hanya warning)", () => {
+  test("state dengan jumper register valid → valid true", () => {
     const state = createInitialState();
     state.config = validConfig();
     state.areaSummary = validAreaSummary();
     state.jumperRegister = [
-      validJumperRecord({ jumperId: "001", dueDate: null }),
-      validJumperRecord({ jumperId: "002", dueDate: "2026-12-31" }),
+      validJumperRecord({ jumperId: "001", authorizationType: AUTH_TYPE.NON_AUTHORIZED, dueDate: null }),
+      validJumperRecord({ jumperId: "002", authorizationType: AUTH_TYPE.AUTHORIZED, dueDate: "2026-12-31" }),
     ];
     const result = validateFullState(state);
     expect(result.valid).toBe(true);
