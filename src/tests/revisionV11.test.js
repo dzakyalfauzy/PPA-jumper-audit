@@ -166,6 +166,10 @@ describe("REVISION 3 & 4 — Slide Header & KPI Visual Hierarchy", () => {
     expect(html).toContain("PPA JUMPER AUDIT | Week 40 - 2026");
     expect(html).toContain("assets/logo_vale.png");
     expect(html).toContain("assets/logo_mindid.png");
+
+    const mindidIdx = html.indexOf("logo_mindid.png");
+    const valeIdx = html.indexOf("logo_vale.png");
+    expect(mindidIdx).toBeLessThan(valeIdx);
   });
 
   test("KPI Visual Hierarchy menampilkan rasio pembilang/penyebut dan persentase terbalik", () => {

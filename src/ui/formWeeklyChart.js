@@ -46,7 +46,7 @@ let _filterArea     = "";
 let _filterCategory = "";
 let _filterWeek     = "";
 let _searchQuery    = "";
-let _visibleLimit   = 10;
+let _currentPage    = 1;
 
 const PAGE_SIZE = 10;
 
@@ -99,8 +99,11 @@ export function filterRows(data, { filterArea, filterCategory, filterWeek, searc
   return filtered;
 }
 
-export function paginateRows(filtered, limit) {
-  return filtered.slice(0, limit);
+export function paginateRows(filtered, page, pageSize) {
+  const p = page || 1;
+  const ps = pageSize || PAGE_SIZE;
+  const start = (p - 1) * ps;
+  return filtered.slice(start, start + ps);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,8 +120,13 @@ function _render(container) {
     searchQuery: _searchQuery,
   });
 
-  const visible = paginateRows(filtered, _visibleLimit);
-  const hasMore = filtered.length > _visibleLimit;
+  const totalItems = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if (_currentPage > totalPages) _currentPage = totalPages;
+  if (_currentPage < 1) _currentPage = 1;
+
+  const startIndex = (_currentPage - 1) * PAGE_SIZE;
+  const visible = paginateRows(filtered, _currentPage, PAGE_SIZE);
 
   // Collect unique weeks present in data for the Week filter dropdown
   const weeksInData = [...new Set(allData.map((r) => r.week).filter(Boolean))].sort((a, b) => {
@@ -187,7 +195,16 @@ function _render(container) {
       </table>
     </div>
 
-    ${hasMore ? `<div class="wc-see-more-wrap"><button class="btn btn--secondary btn--sm" id="wc-see-more-btn" type="button">See More (${filtered.length - _visibleLimit} tersisa)</button></div>` : ""}
+    <!-- pagination -->
+    <div class="pagination-bar" style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:6px 0;flex-wrap:wrap;gap:8px;">
+      <span class="text-muted" style="font-size:0.875rem;">
+        Menampilkan ${totalItems === 0 ? 0 : startIndex + 1}–${Math.min(startIndex + PAGE_SIZE, totalItems)} dari ${totalItems} data (Halaman ${_currentPage} dari ${totalPages})
+      </span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn--secondary btn--sm" id="wc-page-prev" type="button" ${_currentPage <= 1 ? "disabled" : ""}>« Sebelumnya</button>
+        <button class="btn btn--secondary btn--sm" id="wc-page-next" type="button" ${_currentPage >= totalPages ? "disabled" : ""}>Berikutnya »</button>
+      </div>
+    </div>
   `;
 
   _bindEvents(container);
@@ -255,17 +272,17 @@ function _bindEvents(container) {
   // Filter dropdowns
   container.querySelector("#wc-filter-area")?.addEventListener("change", (e) => {
     _filterArea = e.target.value;
-    _visibleLimit = PAGE_SIZE;
+    _currentPage = 1;
     _render(container);
   });
   container.querySelector("#wc-filter-category")?.addEventListener("change", (e) => {
     _filterCategory = e.target.value;
-    _visibleLimit = PAGE_SIZE;
+    _currentPage = 1;
     _render(container);
   });
   container.querySelector("#wc-filter-week")?.addEventListener("change", (e) => {
     _filterWeek = e.target.value;
-    _visibleLimit = PAGE_SIZE;
+    _currentPage = 1;
     _render(container);
   });
 
@@ -274,7 +291,7 @@ function _bindEvents(container) {
   if (searchInput) {
     searchInput.addEventListener("input", (e) => {
       _searchQuery = e.target.value;
-      _visibleLimit = PAGE_SIZE;
+      _currentPage = 1;
       _render(container);
       const newInput = container.querySelector("#wc-search");
       if (newInput) {
@@ -284,9 +301,12 @@ function _bindEvents(container) {
     });
   }
 
-  // See More button
-  container.querySelector("#wc-see-more-btn")?.addEventListener("click", () => {
-    _visibleLimit += PAGE_SIZE;
+  // Pagination buttons
+  container.querySelector("#wc-page-prev")?.addEventListener("click", () => {
+    if (_currentPage > 1) { _currentPage--; _render(container); }
+  });
+  container.querySelector("#wc-page-next")?.addEventListener("click", () => {
+    _currentPage++;
     _render(container);
   });
 

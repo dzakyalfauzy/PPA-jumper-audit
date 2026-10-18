@@ -22,8 +22,7 @@
 import { getState, initInitialDataset, savePersistedState } from "../model/state.js";
 import { validateFullState } from "../model/validation.js";
 import { APP_CONFIG } from "../model/config.js";
-import { areaSummaryDiscrepancy } from "../logic/selectors.js";
-import { mountFormReportInfo, setDiscrepancyWarnings } from "./formReportInfo.js";
+import { mountFormReportInfo, refreshAreaSummaryDisplay } from "./formReportInfo.js";
 import { mountFormWeeklyChart, refreshFormWeeklyChart } from "./formWeeklyChart.js";
 import { mountFormRegister, refreshFormRegister } from "./formRegister.js";
 import { renderSlidePreview } from "../preview/slidePreview.js";
@@ -110,8 +109,9 @@ function _onStateChange() {
   // Simpan perubahan ke LocalStorage
   savePersistedState();
 
-  // 1. Discrepancy warnings untuk area summary
-  _updateDiscrepancyWarnings(state);
+  // 1. Refresh Area Summary display (otomatis dari Weekly Chart)
+  const areaContainer = document.getElementById("section-area-summary");
+  if (areaContainer) refreshAreaSummaryDisplay(areaContainer);
 
   // 2. Refresh weekly chart form
   const wcContainer = document.getElementById("section-weekly-chart");
@@ -126,16 +126,6 @@ function _onStateChange() {
 
   // 5. Render / update slide preview
   _updatePreview(state);
-}
-
-// ---------------------------------------------------------------------------
-// DISCREPANCY WARNINGS
-// ---------------------------------------------------------------------------
-
-function _updateDiscrepancyWarnings(state) {
-  const disc = areaSummaryDiscrepancy(state.areaSummary, state.jumperRegister);
-  const areaContainer = document.getElementById("section-area-summary");
-  if (areaContainer) setDiscrepancyWarnings(disc.warnings, areaContainer);
 }
 
 // ---------------------------------------------------------------------------

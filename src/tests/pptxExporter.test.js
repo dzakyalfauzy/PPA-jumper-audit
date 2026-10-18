@@ -8,6 +8,7 @@
 import { exportToPowerPoint, getOptimizedWeekLabels, SLIDE_W, SLIDE_H, MARGIN } from "../export/pptxExporter.js";
 import { WEEK_40_BASELINE, createJumperRecord } from "../model/state.js";
 import { AREA_IDS, CATEGORIES, AUTH_TYPE } from "../model/constants.js";
+import { LOGO_VALE_BASE64, LOGO_MINDID_BASE64 } from "../export/logos.js";
 import PptxGenJS from "pptxgenjs";
 
 describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", () => {
@@ -400,5 +401,41 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
 
     const plcWithoutActiveLabel = slide.texts.find((t) => t.txt === "PLCs without active jumper");
     expect(plcWithoutActiveLabel).toBeDefined();
+  });
+
+  test("8. Logo order: MIND ID sebelum Vale pada slide PPTX", async () => {
+    const mockPptxInstance8 = {
+      layout: null, author: null, company: null, title: null, slides: [],
+      addSlide() {
+        const s = {
+          background: null, shapes: [], texts: [], tables: [], charts: [], images: [],
+          addShape(type, opts) { this.shapes.push({ type, opts }); },
+          addText(txt, opts) { this.texts.push({ txt, opts }); },
+          addTable(rows, opts) { this.tables.push({ rows, opts }); },
+          addChart(types, data, opts) { this.charts.push({ types, data, opts }); },
+          addImage(opts) { this.images.push(opts); },
+        };
+        this.slides.push(s);
+        return s;
+      },
+      async writeFile() { return "mock_success"; },
+      write: async () => Buffer.from("mock"),
+    };
+    class MockPptxGen8 {
+      constructor() {
+        this.ChartType = { bar: "bar", line: "line" };
+        this.defineLayout = () => {};
+        return Object.assign(mockPptxInstance8, { ChartType: this.ChartType, defineLayout: this.defineLayout });
+      }
+    }
+
+    await exportToPowerPoint(mockState, MockPptxGen8);
+    const slide = mockPptxInstance8.slides[0];
+    expect(slide.images.length).toBeGreaterThanOrEqual(2);
+    const mindidImg = slide.images.find((img) => img.data && img.data.includes(LOGO_MINDID_BASE64.substring(0, 30)));
+    const valeImg = slide.images.find((img) => img.data && img.data.includes(LOGO_VALE_BASE64.substring(0, 30)));
+    expect(mindidImg).toBeDefined();
+    expect(valeImg).toBeDefined();
+    expect(mindidImg.x).toBeLessThan(valeImg.x);
   });
 });

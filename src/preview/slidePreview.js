@@ -198,8 +198,8 @@ function _buildSlideHTML(state, computed) {
       <div class="slide-header">
         <div class="slide-header__title">${_esc(headerTitle)}</div>
         <div class="slide-header__logos">
-          <img src="assets/logo_vale.png" alt="Vale" class="slide-header__logo-img" />
           <img src="assets/logo_mindid.png" alt="MIND ID" class="slide-header__logo-img" />
+          <img src="assets/logo_vale.png" alt="Vale" class="slide-header__logo-img" />
         </div>
       </div>
 

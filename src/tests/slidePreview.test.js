@@ -323,6 +323,15 @@ describe("renderSlidePreview — layout revisi (tanpa DOM browser)", () => {
     expect(html).not.toContain("Chart Week Labels");
   });
 
+  test("logo order: MIND ID sebelum Vale dalam HTML", () => {
+    const html = render(previewState);
+    const mindidIdx = html.indexOf("logo_mindid.png");
+    const valeIdx = html.indexOf("logo_vale.png");
+    expect(mindidIdx).toBeGreaterThan(-1);
+    expect(valeIdx).toBeGreaterThan(-1);
+    expect(mindidIdx).toBeLessThan(valeIdx);
+  });
+
   test("metric PLC: pembilang jumlah PLC dengan jumper aktif / total PLC", () => {
     const html = render(previewState);
     // 2 record: 1 Active (D3C), 1 Expired (K2) → 2 PLC dengan jumper aktif

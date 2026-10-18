@@ -410,54 +410,137 @@ export const WEEK_40_BASELINE = Object.freeze({
   ],
 });
 
-const STORAGE_KEY = "ppa_jumper_audit_state_v2"; // v2 untuk schema revisi
+export const STORAGE_KEY_V2_1 = "ppa_jumper_audit_state_v2_1";
+export const STORAGE_KEY_V2   = "ppa_jumper_audit_state_v2";
+
+/**
+ * Migrasi sempit untuk record baseline lama yang kehilangan Due Date.
+ * Hanya memulihkan Due Date jika record terbukti identik dengan baseline WEEK_40_BASELINE
+ * (jumperId, plc, areaId, category, installedDate, description cocok persis)
+ * dan record tersebut Authorized tapi dueDate bernilai null/kosong.
+ * Tidak menimpa record yang diedit user atau record yang sudah memiliki dueDate.
+ *
+ * @param {Array} records
+ * @returns {Array}
+ */
+export function migrateLegacyBaselineDueDates(records) {
+  if (!Array.isArray(records)) return records;
+
+  return records.map((record) => {
+    // Hanya periksa jika dueDate kosong/null/undefined
+    const hasDueDate = record.dueDate !== null && record.dueDate !== undefined && String(record.dueDate).trim() !== "";
+    if (hasDueDate) {
+      return record;
+    }
+
+    // Hanya periksa jika record Authorized (atau belum diset)
+    const isAuthorized = record.authorizationType === AUTH_TYPE.AUTHORIZED ||
+                         record.authorizationType === undefined ||
+                         record.authorizationStatus === "Authorized";
+    if (!isAuthorized) {
+      return record;
+    }
+
+    // Cari pasangan baseline yang authoritative
+    const baseline = WEEK_40_BASELINE.jumperRegister.find((b) => b.jumperId === record.jumperId);
+    if (!baseline || !baseline.dueDate) {
+      return record;
+    }
+
+    // Verifikasi identitas record: semua atribut identitas harus cocok persis dengan baseline
+    const isExactMatch =
+      record.plc === baseline.plc &&
+      record.areaId === baseline.areaId &&
+      record.category === baseline.category &&
+      record.installedDate === baseline.installedDate &&
+      String(record.description || "").trim() === String(baseline.description || "").trim();
+
+    if (isExactMatch) {
+      return {
+        ...record,
+        dueDate: baseline.dueDate,
+        authorizationType: AUTH_TYPE.AUTHORIZED,
+      };
+    }
+
+    return record;
+  });
+}
 
 export function loadPersistedState() {
   try {
-    if (typeof window !== "undefined" && window.localStorage) {
-      const serialized = window.localStorage.getItem(STORAGE_KEY);
-      if (serialized) {
-        let parsed = JSON.parse(serialized);
-        if (parsed && parsed.config && Array.isArray(parsed.jumperRegister)) {
-          // Deteksi schema lama: record punya field authorizationStatus/mocStatus
-          // atau jumperId bukan 3-digit numerik → migrasikan ke schema baru.
-          const isLegacy = parsed.jumperRegister.some(
-            (r) =>
-              r.authorizationStatus !== undefined ||
-              r.mocStatus !== undefined ||
-              r.removalStatus !== undefined ||
-              r.installedWeekOrDate !== undefined ||
-              r.identificationYear !== undefined ||
-              r.quantity !== undefined ||
-              r.dueDateStatus !== undefined ||
-              !/^\d{3}$/.test(String(r.jumperId || ""))
-          );
-          if (isLegacy) {
-            parsed.jumperRegister = migrateJumperRecords(parsed.jumperRegister);
-          }
-          // Migrasi config: hapus weekLabels dan identificationYearFilter jika ada
-          if (parsed.config) {
-            delete parsed.config.weekLabels;
-            delete parsed.config.identificationYearFilter;
-          }
-          parsed.jumperRegister = _ensureAuthorizationType(parsed.jumperRegister);
-          _state = parsed;
-          syncAreaSummaryFromWeeklyChart();
-          savePersistedState();
-          return true;
-        }
-      }
+    if (typeof window === "undefined" || !window.localStorage) {
+      return false;
     }
+
+    let serialized = window.localStorage.getItem(STORAGE_KEY_V2_1);
+    let isFromLegacyKey = false;
+
+    if (!serialized) {
+      serialized = window.localStorage.getItem(STORAGE_KEY_V2);
+      if (serialized) isFromLegacyKey = true;
+    }
+
+    if (!serialized) {
+      return false;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(serialized);
+    } catch (parseErr) {
+      console.warn("Persisted state is malformed JSON, preserving data without overwriting:", parseErr);
+      return false;
+    }
+
+    if (!parsed || typeof parsed !== "object" || !parsed.config || !Array.isArray(parsed.jumperRegister)) {
+      console.warn("Persisted state has invalid structure, preserving data without overwriting");
+      return false;
+    }
+
+    // 1. Deteksi schema lama: field authorizationStatus/mocStatus atau ID bukan 3 digit
+    const isLegacy = parsed.jumperRegister.some(
+      (r) =>
+        r.authorizationStatus !== undefined ||
+        r.mocStatus !== undefined ||
+        r.removalStatus !== undefined ||
+        r.installedWeekOrDate !== undefined ||
+        r.identificationYear !== undefined ||
+        r.quantity !== undefined ||
+        r.dueDateStatus !== undefined ||
+        !/^\d{3}$/.test(String(r.jumperId || ""))
+    );
+    if (isLegacy) {
+      parsed.jumperRegister = migrateJumperRecords(parsed.jumperRegister);
+    }
+
+    // 2. Migrasi config: hapus weekLabels dan identificationYearFilter jika ada
+    if (parsed.config) {
+      delete parsed.config.weekLabels;
+      delete parsed.config.identificationYearFilter;
+    }
+
+    parsed.jumperRegister = _ensureAuthorizationType(parsed.jumperRegister);
+
+    // 3. Migrasi sempit untuk baseline Due Dates lama
+    parsed.jumperRegister = migrateLegacyBaselineDueDates(parsed.jumperRegister);
+
+    _state = parsed;
+    syncAreaSummaryFromWeeklyChart();
+
+    // 4. Simpan ke key terbaru (STORAGE_KEY_V2_1), biarkan legacy key aman sebagai fallback
+    savePersistedState();
+    return true;
   } catch (e) {
     console.warn("Failed to load persisted state from localStorage:", e);
+    return false;
   }
-  return false;
 }
 
 export function savePersistedState() {
   try {
     if (typeof window !== "undefined" && window.localStorage) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_state));
+      window.localStorage.setItem(STORAGE_KEY_V2_1, JSON.stringify(_state));
     }
   } catch (e) {
     console.warn("Failed to save state to localStorage:", e);

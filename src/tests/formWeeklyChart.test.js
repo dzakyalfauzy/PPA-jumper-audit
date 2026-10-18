@@ -4,7 +4,7 @@
  *
  * Fungsi yang diuji:
  *   - filterRows — Area, Category, Week dropdown filters + search (AND logic)
- *   - paginateRows — batch 10, See More incremental
+ *   - paginateRows — conventional pagination (page + pageSize)
  *   - Filter + pagination reset interaction
  */
 
@@ -13,7 +13,7 @@
 import { filterRows, paginateRows } from "../ui/formWeeklyChart.js";
 
 // ---------------------------------------------------------------------------
-// SAMPLE DATA — 25 rows across areas, categories, weeks
+// SAMPLE DATA — 36 rows across areas, categories, weeks
 // ---------------------------------------------------------------------------
 
 function makeSampleData() {
@@ -130,46 +130,86 @@ describe("filterRows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// paginateRows
+// paginateRows — conventional page-based pagination
 // ---------------------------------------------------------------------------
 
 describe("paginateRows", () => {
 
-  test("returns first 10 rows when limit is 10", () => {
-    const result = paginateRows(SAMPLE, 10);
+  test("page 1 returns first 10 rows", () => {
+    const result = paginateRows(SAMPLE, 1, 10);
     expect(result).toHaveLength(10);
     expect(result[0]).toBe(SAMPLE[0]);
     expect(result[9]).toBe(SAMPLE[9]);
   });
 
-  test("returns all rows when limit exceeds data length", () => {
-    const result = paginateRows(SAMPLE, 100);
-    expect(result).toHaveLength(SAMPLE.length);
+  test("page 2 returns rows 11-20", () => {
+    const result = paginateRows(SAMPLE, 2, 10);
+    expect(result).toHaveLength(10);
+    expect(result[0]).toBe(SAMPLE[10]);
+    expect(result[9]).toBe(SAMPLE[19]);
   });
 
-  test("returns empty array for empty data", () => {
-    const result = paginateRows([], 10);
+  test("page 3 returns rows 21-30", () => {
+    const result = paginateRows(SAMPLE, 3, 10);
+    expect(result).toHaveLength(10);
+    expect(result[0]).toBe(SAMPLE[20]);
+  });
+
+  test("last page returns partial rows (36 total, page 4 = 6 rows)", () => {
+    const result = paginateRows(SAMPLE, 4, 10);
+    expect(result).toHaveLength(6);
+    expect(result[0]).toBe(SAMPLE[30]);
+    expect(result[5]).toBe(SAMPLE[35]);
+  });
+
+  test("page beyond data returns empty array", () => {
+    const result = paginateRows(SAMPLE, 5, 10);
     expect(result).toHaveLength(0);
   });
 
-  test("incremental reveal: limit 10 then 20", () => {
-    const batch1 = paginateRows(SAMPLE, 10);
-    const batch2 = paginateRows(SAMPLE, 20);
-    expect(batch1).toHaveLength(10);
-    expect(batch2).toHaveLength(20);
-    expect(batch2.slice(0, 10)).toEqual(batch1);
+  test("returns empty array for empty data", () => {
+    const result = paginateRows([], 1, 10);
+    expect(result).toHaveLength(0);
   });
 
-  test("See More reveals remaining: limit 30 shows all 36 rows from sample", () => {
-    const batch3 = paginateRows(SAMPLE, 30);
-    expect(batch3).toHaveLength(30);
-    const batchAll = paginateRows(SAMPLE, 40);
-    expect(batchAll).toHaveLength(SAMPLE.length); // 36
+  test("single record on page 1", () => {
+    const data = [{ areaId: "dryer_cm", category: "AFI", week: "W40", plan: 1, actual: 2 }];
+    const result = paginateRows(data, 1, 10);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(data[0]);
+  });
+
+  test("exactly 10 records fits in one page", () => {
+    const data = SAMPLE.slice(0, 10);
+    const page1 = paginateRows(data, 1, 10);
+    expect(page1).toHaveLength(10);
+    const page2 = paginateRows(data, 2, 10);
+    expect(page2).toHaveLength(0);
+  });
+
+  test("11 records: page 1 has 10, page 2 has 1", () => {
+    const data = SAMPLE.slice(0, 11);
+    expect(paginateRows(data, 1, 10)).toHaveLength(10);
+    expect(paginateRows(data, 2, 10)).toHaveLength(1);
+  });
+
+  test("20 records: page 1 has 10, page 2 has 10, page 3 has 0", () => {
+    const data = SAMPLE.slice(0, 20);
+    expect(paginateRows(data, 1, 10)).toHaveLength(10);
+    expect(paginateRows(data, 2, 10)).toHaveLength(10);
+    expect(paginateRows(data, 3, 10)).toHaveLength(0);
+  });
+
+  test("21 records: page 1 has 10, page 2 has 10, page 3 has 1", () => {
+    const data = SAMPLE.slice(0, 21);
+    expect(paginateRows(data, 1, 10)).toHaveLength(10);
+    expect(paginateRows(data, 2, 10)).toHaveLength(10);
+    expect(paginateRows(data, 3, 10)).toHaveLength(1);
   });
 
   test("does not mutate original array", () => {
     const copy = [...SAMPLE];
-    paginateRows(SAMPLE, 5);
+    paginateRows(SAMPLE, 2, 10);
     expect(SAMPLE).toEqual(copy);
   });
 });
@@ -183,37 +223,61 @@ describe("filterRows + paginateRows integration", () => {
   test("filter first, then paginate — correct count", () => {
     const filtered = filterRows(SAMPLE, { filterArea: "dryer_cm", filterCategory: "", filterWeek: "", searchQuery: "" });
     expect(filtered).toHaveLength(9);
-    const page1 = paginateRows(filtered, 10);
+    const page1 = paginateRows(filtered, 1, 10);
     expect(page1).toHaveLength(9); // less than 10 → show all
   });
 
-  test("pagination resets conceptually when filter changes", () => {
-    // Simulate: user had visibleLimit=20, then changes filter → limit should reset to 10
-    const allFiltered = filterRows(SAMPLE, { filterArea: "", filterCategory: "", filterWeek: "", searchQuery: "" });
-    const expandedPage = paginateRows(allFiltered, 20);
-    expect(expandedPage).toHaveLength(20);
+  test("pagination page count correct after filter", () => {
+    const filtered = filterRows(SAMPLE, { filterArea: "", filterCategory: "", filterWeek: "", searchQuery: "" });
+    const totalPages = Math.max(1, Math.ceil(filtered.length / 10));
+    expect(totalPages).toBe(4); // 36 / 10 = 3.6 → 4 pages
+  });
 
-    // After filter change, conceptual reset to 10
-    const narrowFiltered = filterRows(SAMPLE, { filterArea: "furnace", filterCategory: "", filterWeek: "", searchQuery: "" });
-    const resetPage = paginateRows(narrowFiltered, 10);
-    expect(resetPage).toHaveLength(9); // furnace has 9 rows → all fit in first 10
+  test("filter narrows to < 10 rows → only 1 page needed", () => {
+    const filtered = filterRows(SAMPLE, { filterArea: "furnace", filterCategory: "", filterWeek: "", searchQuery: "" });
+    expect(filtered).toHaveLength(9);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / 10));
+    expect(totalPages).toBe(1);
+    const page1 = paginateRows(filtered, 1, 10);
+    expect(page1).toHaveLength(9);
+  });
+
+  test("filter returns 0 rows → totalPages is 1, page 1 returns empty", () => {
+    const filtered = filterRows(SAMPLE, { filterArea: "dryer_cm", filterCategory: "", filterWeek: "", searchQuery: "zzzzz" });
+    expect(filtered).toHaveLength(0);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / 10));
+    expect(totalPages).toBe(1);
+    const page1 = paginateRows(filtered, 1, 10);
+    expect(page1).toHaveLength(0);
   });
 
   test("filter with search + dropdown + pagination", () => {
     const filtered = filterRows(SAMPLE, { filterArea: "kiln_cts", filterCategory: "AFI", filterWeek: "", searchQuery: "" });
     expect(filtered).toHaveLength(3);
-    const page1 = paginateRows(filtered, 10);
+    const page1 = paginateRows(filtered, 1, 10);
     expect(page1).toHaveLength(3);
   });
 
-  test("hasMore flag logic: filtered.length > visibleLimit", () => {
+  test("previous page disabled on page 1, next disabled on last page", () => {
     const filtered = filterRows(SAMPLE, { filterArea: "", filterCategory: "", filterWeek: "", searchQuery: "" });
-    const limit = 10;
-    const hasMore = filtered.length > limit;
-    expect(hasMore).toBe(true);
+    const totalPages = Math.ceil(filtered.length / 10);
+    const currentPage = 1;
+    expect(currentPage <= 1).toBe(true);
+    expect(currentPage >= totalPages).toBe(false);
 
-    const limit2 = 40;
-    const hasMore2 = filtered.length > limit2;
-    expect(hasMore2).toBe(false);
+    const lastPage = totalPages;
+    expect(lastPage >= totalPages).toBe(true);
+    expect(lastPage <= 1).toBe(false);
+  });
+
+  test("page info text format: 'Menampilkan X-Y dari Z data (Halaman P dari T)'", () => {
+    const totalItems = 36;
+    const currentPage = 2;
+    const totalPages = 4;
+    const startIndex = (currentPage - 1) * 10;
+    const displayStart = totalItems === 0 ? 0 : startIndex + 1;
+    const displayEnd = Math.min(startIndex + 10, totalItems);
+    const text = `Menampilkan ${displayStart}\u2013${displayEnd} dari ${totalItems} data (Halaman ${currentPage} dari ${totalPages})`;
+    expect(text).toBe("Menampilkan 11\u201320 dari 36 data (Halaman 2 dari 4)");
   });
 });

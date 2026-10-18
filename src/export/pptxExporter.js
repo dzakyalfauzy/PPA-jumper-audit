@@ -236,22 +236,22 @@ function _buildHeader(slide, config, reportingWeekLabel) {
     align: "left", valign: "middle"
   });
 
-  // Logos on the far right directly on the header bar (clean white corporate logos on navy background)
+  // Logos on the far right directly on the header bar: MIND ID (left) then Vale (right)
   const logoH = 0.26;
   const logoY = 0.17;
-  const valeW = 0.68;
   const mindidW = 0.90;
-  const mindidX = 12.21;
-  const valeX = 11.33;
+  const valeW = 0.68;
+  const mindidX = 11.33;
+  const valeX = 12.41;
 
   if (typeof slide.addImage === "function") {
     slide.addImage({
-      data: `data:image/png;base64,${LOGO_VALE_BASE64}`,
-      x: valeX, y: logoY, w: valeW, h: logoH
-    });
-    slide.addImage({
       data: `data:image/png;base64,${LOGO_MINDID_BASE64}`,
       x: mindidX, y: logoY, w: mindidW, h: logoH
+    });
+    slide.addImage({
+      data: `data:image/png;base64,${LOGO_VALE_BASE64}`,
+      x: valeX, y: logoY, w: valeW, h: logoH
     });
   }
 }

@@ -70,10 +70,8 @@ export function mountFormReportInfo(containerInfo, containerArea, { onStateChang
  * @param {object[]} warnings
  * @param {HTMLElement} containerArea
  */
-export function setDiscrepancyWarnings(warnings, containerArea) {
-  _discrepancyWarnings = warnings || [];
-  _populateAreaSummary(containerArea);
-  _renderDiscrepancyWarnings(containerArea);
+export function setDiscrepancyWarnings() {
+  // Obsolete: Area Summary dihitung otomatis dari Weekly Chart dan tidak lagi dibandingkan dengan Jumper Register
 }
 
 /**
@@ -130,22 +128,15 @@ function _buildAreaSummaryHTML() {
   const areaSummaryCards = AREA_ID_LIST.map((areaId) => `
     <div class="area-card" id="area-card-${areaId}">
       <div class="area-card__label">${AREA_LABELS[areaId]}</div>
-      <input
-        type="number"
+      <div
         id="area-${areaId}"
         data-area="${areaId}"
-        class="area-card__input area-card__input--readonly"
-        readonly
-        tabindex="-1"
-        placeholder="0"
-      />
-      <div class="field-error" id="area-err-${areaId}"></div>
-      <div class="field-warning" id="area-disc-${areaId}"></div>
+        class="area-card__metric"
+      >0</div>
     </div>
   `).join("");
 
   return `
-    <div id="area-discrepancy-banner"></div>
     <div class="area-summary-grid">
       ${areaSummaryCards}
     </div>
@@ -217,10 +208,15 @@ export function refreshAreaSummaryDisplay(container) {
 }
 
 function _populateAreaSummary(container) {
+  if (!container) return;
   const summary = getAreaSummary();
   summary.forEach(({ areaId, jumperCount }) => {
     const el = container.querySelector(`#area-${areaId}`);
-    if (el) el.value = jumperCount !== null ? jumperCount : "0";
+    if (el) {
+      const val = jumperCount !== null && jumperCount !== undefined ? String(jumperCount) : "0";
+      el.textContent = val;
+      if ("value" in el) el.value = val;
+    }
   });
 }
 
@@ -251,59 +247,6 @@ function _runConfigValidation(container) {
         break;
       }
     }
-  });
-}
-
-function _validateAreaInput(container, areaId, val) {
-  const errEl = container.querySelector(`#area-err-${areaId}`);
-  if (!errEl) return;
-  if (val === null) {
-    errEl.textContent = "Wajib diisi.";
-  } else if (!Number.isInteger(val) || val < 0) {
-    errEl.textContent = "Harus bilangan bulat ≥ 0.";
-  } else {
-    errEl.textContent = "";
-  }
-}
-
-function _renderDiscrepancyWarnings(container) {
-  if (!container) return;
-  const banner = container.querySelector("#area-discrepancy-banner");
-  if (!banner) return;
-
-  const discrepant = _discrepancyWarnings.filter((w) => w.discrepancy);
-  if (discrepant.length === 0) {
-    banner.innerHTML = "";
-    AREA_ID_LIST.forEach((areaId) => {
-      const el = container.querySelector(`#area-disc-${areaId}`);
-      if (el) el.textContent = "";
-      const card = container.querySelector(`#area-card-${areaId}`);
-      if (card) card.classList.remove("has-discrepancy");
-    });
-    return;
-  }
-
-  banner.innerHTML = `
-    <div class="alert alert--warning">
-      <strong>⚠ Discrepancy Warning:</strong>
-      Nilai Area Summary (dari Actual Weekly Chart) berbeda dari hitungan Jumper Register (aktif).
-      <ul>
-        ${discrepant.map((w) => `
-          <li>
-            <strong>${AREA_LABELS[w.areaId] || w.areaId}</strong>:
-            Area Summary = ${w.manualCount ?? 0}, register = ${w.computedCount}
-          </li>
-        `).join("")}
-      </ul>
-    </div>
-  `;
-
-  AREA_ID_LIST.forEach((areaId) => {
-    const w = _discrepancyWarnings.find((x) => x.areaId === areaId);
-    const discEl = container.querySelector(`#area-disc-${areaId}`);
-    const card   = container.querySelector(`#area-card-${areaId}`);
-    if (discEl) discEl.textContent = w && w.discrepancy ? `Register: ${w.computedCount}` : "";
-    if (card)   card.classList.toggle("has-discrepancy", !!(w && w.discrepancy));
   });
 }
 
