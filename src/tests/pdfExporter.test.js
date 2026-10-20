@@ -92,8 +92,8 @@ describe("PHASE 6 — PDF Export (pdfExporter.js)", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.filename).toBe("PPA_JUMPER_AUDIT_WEEK-40_W40_2026.pdf");
-    expect(savedFilename).toBe("PPA_JUMPER_AUDIT_WEEK-40_W40_2026.pdf");
+    expect(result.filename).toBe("PPA_JUMPER_AUDIT_WEEK_W43_2026.pdf");
+    expect(savedFilename).toBe("PPA_JUMPER_AUDIT_WEEK_W43_2026.pdf");
 
     // Dimensi 16:9 landscape: 960 pt x 540 pt
     expect(result.pdf.opts).toEqual({

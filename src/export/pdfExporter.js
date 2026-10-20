@@ -20,8 +20,10 @@ import { validateFullState } from "../model/validation.js";
  */
 export function getPdfFilename(config = {}) {
   const safeTitle = (config.title || "PPA_Jumper_Audit").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const reportingWeekNum = config.reportingWeek ?? null;
-  const reportingWeekLabel = reportingWeekNum != null ? `W${reportingWeekNum}` : "W";
+  const reportingWeekRaw = config.reportingWeek != null ? String(config.reportingWeek).trim().toUpperCase() : null;
+  const reportingWeekLabel = reportingWeekRaw
+    ? (reportingWeekRaw.startsWith("W") ? reportingWeekRaw : `W${reportingWeekRaw}`)
+    : "W";
   const reportingYear = config.reportingYear ?? "";
   return `${safeTitle}_${reportingWeekLabel}_${reportingYear || ""}.pdf`;
 }

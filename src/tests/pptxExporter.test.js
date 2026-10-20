@@ -16,8 +16,6 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
 
   beforeEach(() => {
     mockState = JSON.parse(JSON.stringify(WEEK_40_BASELINE));
-    // Aktifkan 1 record agar PLC bar chart dirender (jumperPerPlc > 0)
-    mockState.jumperRegister[0].dueDate = "2099-12-31";
   });
 
   test("1. Ekspor berhasil dengan state valid Week-40 Baseline", async () => {
@@ -62,7 +60,7 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
 
     const result = await exportToPowerPoint(mockState, MockPptxGen);
     expect(result.success).toBe(true);
-    expect(result.filename).toMatch(/PPA_JUMPER_AUDIT.*_W40_2026\.pptx/);
+    expect(result.filename).toMatch(/PPA_JUMPER_AUDIT.*_W43_2026\.pptx/);
 
     // Verifikasi tepat 1 slide
     expect(mockPptxInstance.slides).toHaveLength(1);
@@ -285,7 +283,7 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
     expect(authDataIds).toEqual(["001", "002"]);
     expect(authDataIds).not.toContain("003");
 
-    // 2. Non-Authorized table (right column, headers: No, ID, PLC, Description)
+    // 2. Non-Authorized table (right column, headers: No, ID, PLC, Area, Category)
     const nonAuthTable = slide.tables.find(
       (tb) => tb.rows[0] && tb.rows[0][0] && tb.rows[0][0].text === "No" && tb.rows[0][1].text === "ID"
     );

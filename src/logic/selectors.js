@@ -220,25 +220,24 @@ export function plcsWithoutActiveJumpers(jumperRegister, totalPlcInScope, today 
 }
 
 // ---------------------------------------------------------------------------
-// BR-07: JUMPER COUNT PER PLC (untuk grafik) — hanya jumper aktif
+// BR-07: JUMPER COUNT PER PLC (untuk grafik) — semua record valid
 // ---------------------------------------------------------------------------
 
 /**
- * Mengagregasikan Quantity per PLC dan Category, hanya jumper aktif.
+ * Mengagregasikan Quantity per PLC dan Category, semua record yang memiliki PLC dan Category valid.
+ * Mencakup record Authorized dan Non-Authorized tanpa memfilter berdasarkan status Due Date.
  * Quantity default = 1 (field quantity dihapus dari schema).
  *
  * @param {object[]} jumperRegister
- * @param {Date} [today]
  * @returns {object[]} Array { plc, byCategory: { [category]: number }, total: number }
  *   — diurutkan berdasarkan plc string (untuk konsistensi tampilan)
  */
-export function jumperCountPerPlc(jumperRegister, today = new Date()) {
-  const activeRecords = jumperRegister.filter((r) => isActiveJumper(r, today));
+export function jumperCountPerPlc(jumperRegister) {
+  const records = Array.isArray(jumperRegister) ? jumperRegister : [];
 
-  // Bangun map: plc → { category → totalQuantity }
   const plcMap = new Map();
 
-  for (const record of activeRecords) {
+  for (const record of records) {
     const plc = record.plc;
     if (!plc) continue;
 
@@ -249,10 +248,9 @@ export function jumperCountPerPlc(jumperRegister, today = new Date()) {
     const cat = record.category;
     if (!cat) continue;
 
-    catMap[cat] = (catMap[cat] ?? 0) + 1; // quantity default 1
+    catMap[cat] = (catMap[cat] ?? 0) + 1;
   }
 
-  // Konversi ke array yang terstruktur
   const result = [];
   for (const [plc, catMap] of plcMap.entries()) {
     const byCategory = {};
@@ -265,7 +263,6 @@ export function jumperCountPerPlc(jumperRegister, today = new Date()) {
     result.push({ plc, byCategory, total });
   }
 
-  // Sort berdasarkan nama PLC untuk konsistensi tampilan
   result.sort((a, b) => a.plc.localeCompare(b.plc));
   return result;
 }

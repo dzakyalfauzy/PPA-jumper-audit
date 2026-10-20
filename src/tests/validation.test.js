@@ -50,6 +50,7 @@ function validConfig(overrides = {}) {
     reportingYear: 2026,
     reportingWeek: 40,
     totalPlcInScope: 10,
+    totalRemoveJumper: 0,
     ...overrides,
   };
 }
@@ -357,10 +358,10 @@ describe("validateJumperRecord", () => {
     expect(result.errors.some((e) => e.includes("Category"))).toBe(true);
   });
 
-  test("description kosong menghasilkan error", () => {
+  test("description kosong menghasilkan warning (bukan error)", () => {
     const result = validateJumperRecord(validJumperRecord({ description: "" }));
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("Description"))).toBe(true);
+    expect(result.valid).toBe(true);
+    expect(result.warnings.some((w) => w.includes("Description"))).toBe(true);
   });
 
   test("authorizationType null atau kosong menghasilkan error", () => {

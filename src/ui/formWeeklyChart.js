@@ -64,6 +64,15 @@ export function refreshFormWeeklyChart(container) {
   _render(container);
 }
 
+/** Reset semua filter dan kembali ke halaman 1 */
+export function resetWeeklyChartFilters() {
+  _filterArea = "";
+  _filterCategory = "";
+  _filterWeek = "";
+  _searchQuery = "";
+  _currentPage = 1;
+}
+
 // ---------------------------------------------------------------------------
 // FILTERING & PAGINATION (pure — tidak mengubah state)
 // ---------------------------------------------------------------------------

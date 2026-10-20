@@ -244,7 +244,7 @@ describe("Integrasi kalkulasi preview (tanpa DOM)", () => {
       makeRecord({ jumperId: "001", plc: "PLC-A", category: CATEGORIES.AFI, dueDate: "2026-12-31" }), // Active
       makeRecord({ jumperId: "002", plc: "PLC-A", category: CATEGORIES.AFI, dueDate: "2020-01-01" }), // Expired
     ];
-    const result = jumperCountPerPlc(records, new Date(2026, 5, 15));
+    const result = jumperCountPerPlc(records);
     expect(result[0].byCategory[CATEGORIES.AFI]).toBe(2);
   });
 

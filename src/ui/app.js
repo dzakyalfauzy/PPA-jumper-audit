@@ -22,7 +22,7 @@
 import { getState, initInitialDataset, savePersistedState } from "../model/state.js";
 import { validateFullState } from "../model/validation.js";
 import { APP_CONFIG } from "../model/config.js";
-import { mountFormReportInfo, refreshAreaSummaryDisplay } from "./formReportInfo.js";
+import { mountFormReportInfo, refreshAreaSummaryDisplay, refreshReportInfoDisplay } from "./formReportInfo.js";
 import { mountFormWeeklyChart, refreshFormWeeklyChart } from "./formWeeklyChart.js";
 import { mountFormRegister, refreshFormRegister } from "./formRegister.js";
 import { renderSlidePreview } from "../preview/slidePreview.js";
@@ -109,22 +109,26 @@ function _onStateChange() {
   // Simpan perubahan ke LocalStorage
   savePersistedState();
 
-  // 1. Refresh Area Summary display (otomatis dari Weekly Chart)
+  // 1. Refresh Report Info display
+  const infoContainer = document.getElementById("section-report-info");
+  if (infoContainer) refreshReportInfoDisplay(infoContainer);
+
+  // 2. Refresh Area Summary display (otomatis dari Weekly Chart)
   const areaContainer = document.getElementById("section-area-summary");
   if (areaContainer) refreshAreaSummaryDisplay(areaContainer);
 
-  // 2. Refresh weekly chart form
+  // 3. Refresh weekly chart form
   const wcContainer = document.getElementById("section-weekly-chart");
   if (wcContainer) refreshFormWeeklyChart(wcContainer);
 
-  // 3. Refresh register form (for search, etc)
+  // 4. Refresh register form (for search, etc)
   const regContainer = document.getElementById("section-register");
   if (regContainer) refreshFormRegister(regContainer);
 
-  // 4. Update global status panel
+  // 5. Update global status panel
   _updateStatusPanel(state);
 
-  // 5. Render / update slide preview
+  // 6. Render / update slide preview
   _updatePreview(state);
 }
 

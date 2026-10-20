@@ -42,6 +42,7 @@ import {
 } from "../model/state.js";
 import { validateJumperRecord } from "../model/validation.js";
 import { getJumperStatus } from "../logic/selectors.js";
+import { resetWeeklyChartFilters } from "./formWeeklyChart.js";
 
 // ---------------------------------------------------------------------------
 // MODULE STATE
@@ -314,8 +315,11 @@ function _buildModalForm() {
 function _bindEvents(container) {
   // Reset to Baseline button
   container.querySelector("#reg-reset-baseline-btn")?.addEventListener("click", () => {
-    if (confirm("Reset seluruh data ke baseline Week-40 (6 jumper awal)? Perubahan lokal yang belum disimpan akan digantikan.")) {
+    if (confirm("Reset seluruh data ke baseline referensi (6 jumper awal)? Perubahan lokal yang belum disimpan akan digantikan.")) {
       resetToBaseline();
+      resetWeeklyChartFilters();
+      _searchQuery = "";
+      _currentPage = 1;
       _render(container);
       _onStateChange();
     }

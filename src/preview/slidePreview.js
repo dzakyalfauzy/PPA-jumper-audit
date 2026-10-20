@@ -259,7 +259,7 @@ function _buildSlideHTML(state, computed) {
             <div class="slide-section-title">
               Jumper Without MOC/Authorized Jumper
               <span class="slide-count-badge">${nonAuthorizedJumpers.length}</span>
-              <span class="oq-note" style="margin-left:8px; font-size:0.75rem;">[Data source: Jumper Register — Non-Authorized]</span>
+
             </div>
             ${overflowWarning
               ? `<div class="slide-overflow-warning">⚠ Daftar melebihi ${MAX_JUMPER_WITHOUT_MOC_ROWS} item — tampilkan ${MAX_JUMPER_WITHOUT_MOC_ROWS} pertama. Kurangi data atau scroll di output nyata.</div>`
@@ -271,7 +271,7 @@ function _buildSlideHTML(state, computed) {
           <!-- PLCs With Active Jumper / Total PLCs — Percentage -->
           <div class="slide-plc-section">
             <div class="slide-section-title">PLCs With Active Jumper / Total PLCs</div>
-            ${_buildPlcsWithoutActiveMetric(plcMetricResult)}
+            ${_buildPlcsWithoutActiveMetric(plcMetricResult, config.totalRemoveJumper)}
           </div>
 
           <!-- Count per PLC bar chart -->
@@ -333,21 +333,20 @@ function _buildJumperWithoutMocAuthorizedList(nonAuthorizedJumpers, maxRows) {
           <span class="slide-remaining-item__no">${i + 1}.</span>
           <span class="slide-remaining-item__id">${_esc(r.jumperId)}</span>
           <span class="slide-remaining-item__plc">${_esc(r.plc)}</span>
-          <span class="slide-remaining-item__desc">${_esc(r.description || "")}</span>
+          <span class="slide-remaining-item__area">${_esc(AREA_LABELS[r.areaId] || r.areaId || "")}</span>
+          <span class="slide-remaining-item__cat">${_esc(r.category || "")}</span>
         </div>
       `).join("")}
-    </div>
-    <div class="slide-remaining-criteria">
-      Data source: Jumper Register (Authorization Type: Non-Authorized).
     </div>
   `;
 }
 
-function _buildPlcsWithoutActiveMetric(plcMetricResult) {
+function _buildPlcsWithoutActiveMetric(plcMetricResult, totalRemoveJumper = 0) {
   if (!plcMetricResult.ok) {
     return `<div class="slide-empty-section oq-note">${_esc(plcMetricResult.reason)}</div>`;
   }
   const pct = plcMetricResult.percentage !== null ? plcMetricResult.percentage.toFixed(1) : "—";
+  const removeVal = totalRemoveJumper !== null && totalRemoveJumper !== undefined ? totalRemoveJumper : 0;
   return `
     <div class="slide-plc-kpi-card">
       <div class="slide-plc-kpi-left">
@@ -355,9 +354,14 @@ function _buildPlcsWithoutActiveMetric(plcMetricResult) {
         <div class="slide-plc-kpi-lbl">PLCs with active jumper / Total PLCs in Scope</div>
       </div>
       <div class="slide-plc-kpi-divider"></div>
-      <div class="slide-plc-kpi-right">
+      <div class="slide-plc-kpi-center">
         <div class="slide-plc-kpi-pct">${pct}%</div>
         <div class="slide-plc-kpi-lbl">PLCs without active jumper</div>
+      </div>
+      <div class="slide-plc-kpi-divider"></div>
+      <div class="slide-plc-kpi-right">
+        <div class="slide-plc-kpi-remove">${removeVal}</div>
+        <div class="slide-plc-kpi-lbl">Total Remove Jumper</div>
       </div>
     </div>
   `;
@@ -412,7 +416,6 @@ function _buildTotalJumperWithMocAuthorizedTable(authorizedJumpers) {
     </div>
     <div class="oq-note" style="font-size:0.68rem;margin-top:2px;">
       Status dihitung otomatis dari Due Date: Active (> ${EXPIRING_SOON_MAX_DAYS} hari) · Expiring Soon (0–${EXPIRING_SOON_MAX_DAYS} hari) · Expired (lewat).
-      <br>Definisi "With MOC/Authorized" memerlukan konfirmasi — field MOC/Authorization dihapus dari register.
     </div>
   `;
 }

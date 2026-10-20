@@ -45,7 +45,9 @@ export const MARGIN = 0.22;
  */
 export function getOptimizedWeekLabels(configuredLabels, reportingWeek) {
   if (!Array.isArray(configuredLabels) || configuredLabels.length === 0) {
-    return reportingWeek ? [`W${reportingWeek}`] : ["W40"];
+    if (!reportingWeek) return ["W40"];
+    const wStr = String(reportingWeek).trim().toUpperCase();
+    return [wStr.startsWith("W") ? wStr : `W${wStr}`];
   }
 
   if (configuredLabels.length <= 8) {
@@ -100,7 +102,9 @@ export async function exportToPowerPoint(state, PptxGenJSLib = null) {
   const config = state.config;
   const reportingYear = config.reportingYear;
   const reportingWeek = config.reportingWeek;
-  const reportingWeekLabel = reportingWeek != null ? `W${reportingWeek}` : "—";
+  const reportingWeekLabel = reportingWeek != null
+    ? (String(reportingWeek).trim().toUpperCase().startsWith("W") ? String(reportingWeek).trim().toUpperCase() : `W${reportingWeek}`)
+    : "—";
   const displayWeekLabels = getOptimizedWeekLabels(_getSortedWeekLabels(state), reportingWeek);
 
   const plcMetricResult = plcsWithoutActiveJumpers(state.jumperRegister, config.totalPlcInScope);
@@ -121,7 +125,7 @@ export async function exportToPowerPoint(state, PptxGenJSLib = null) {
   _buildBottomLeft(slide, authorizedJumpers);
 
   // 4. Right Column: Jumper Without MOC/Authorized Jumper, PLCs With Active Jumper, & PLC Chart
-  _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthorizedJumpers);
+  _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthorizedJumpers, config.totalRemoveJumper);
 
   // Export buffer & XML post-process
   const safeTitle = (config.title || "PPA_Jumper_Audit").replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -417,7 +421,7 @@ function _buildBottomLeft(slide, authorizedJumpers) {
   });
 }
 
-function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthorizedJumpers = []) {
+function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthorizedJumpers = [], totalRemoveJumper = 0) {
   const colX = 9.04; // 8.82 + 0.22 gap = 9.04
   const colW = 4.07; // 9.04 + 4.07 = 13.11 <= 13.113" (Aman!)
 
@@ -441,7 +445,8 @@ function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthor
     { text: "No", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
     { text: "ID", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
     { text: "PLC", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
-    { text: "Description", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
+    { text: "Area", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
+    { text: "Category", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
   ];
 
   const nonAuthItems = (nonAuthorizedJumpers || []).slice(0, 8);
@@ -450,17 +455,18 @@ function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthor
         { text: String(i + 1), options: { fontSize: 7 } },
         { text: r.jumperId || "—", options: { fontSize: 7, bold: true } },
         { text: r.plc || "—", options: { fontSize: 7 } },
-        { text: r.description || "—", options: { fontSize: 7 } },
+        { text: AREA_LABELS[r.areaId] || r.areaId || "—", options: { fontSize: 7 } },
+        { text: r.category || "—", options: { fontSize: 7 } },
       ])
     : [[
-        { text: "Tidak ada record Non-Authorized", options: { fontSize: 7, colspan: 4, color: "64748B" } }
+        { text: "Tidak ada record Non-Authorized", options: { fontSize: 7, colspan: 5, color: "64748B" } }
       ]];
 
   const remRows = [remHeaders, ...remData];
 
   slide.addTable(remRows, {
     x: colX + 0.08, y: remListY + 0.26, w: colW - 0.16, h: remListH - 0.32,
-    colW: [0.32, 0.72, 0.62, 2.25],
+    colW: [0.30, 0.65, 0.72, 1.08, 1.08],
     border: { color: "E2E8F0", pt: 0.5 },
     fill: "FFFFFF",
     autoPage: false
@@ -482,34 +488,57 @@ function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthor
 
   if (plcMetricResult.ok) {
     const pct = plcMetricResult.percentage !== null ? plcMetricResult.percentage.toFixed(1) : "—";
-    const halfW = (colW - 0.36) / 2;
+    const w1 = 1.35;
+    const w2 = 1.15;
+    const w3 = 1.15;
+    const gap = 0.045;
 
-    // Sisi Kiri: 7 / 69
+    // Kolom 1 (Kiri): 2 / 63
+    const col1X = colX + 0.12;
     slide.addText(`${plcMetricResult.plcsWithActive} / ${plcMetricResult.totalPlcInScope}`, {
-      x: colX + 0.12, y: plcRatioY + 0.22, w: halfW, h: 0.36,
-      fontSize: 16, bold: true, color: "0F172A", align: "left", valign: "top"
+      x: col1X, y: plcRatioY + 0.22, w: w1, h: 0.36,
+      fontSize: 15, bold: true, color: "0F172A", align: "left", valign: "top"
     });
     slide.addText("PLCs with active jumper / Total PLCs in Scope", {
-      x: colX + 0.12, y: plcRatioY + 0.58, w: halfW, h: 0.24,
-      fontSize: 7.5, bold: true, color: "64748B", align: "left", valign: "top"
+      x: col1X, y: plcRatioY + 0.58, w: w1, h: 0.26,
+      fontSize: 7.2, bold: true, color: "64748B", align: "left", valign: "top"
     });
 
-    // Divider tengah
-    const divX = colX + 0.12 + halfW + 0.05;
+    // Divider 1
+    const div1X = col1X + w1 + gap;
     slide.addShape("line", {
-      x: divX, y: plcRatioY + 0.22, w: 0, h: 0.56,
+      x: div1X, y: plcRatioY + 0.22, w: 0, h: 0.56,
       line: { color: "E2E8F0", width: 1 }
     });
 
-    // Sisi Kanan: 89.9% (lebih menonjol)
-    const rightX = divX + 0.07;
+    // Kolom 2 (Tengah): 96.8%
+    const col2X = div1X + gap;
     slide.addText(`${pct}%`, {
-      x: rightX, y: plcRatioY + 0.18, w: halfW, h: 0.40,
-      fontSize: 22, bold: true, color: "1E3A8A", align: "right", valign: "top"
+      x: col2X, y: plcRatioY + 0.18, w: w2, h: 0.40,
+      fontSize: 18, bold: true, color: "1E3A8A", align: "center", valign: "top"
     });
     slide.addText("PLCs without active jumper", {
-      x: rightX, y: plcRatioY + 0.58, w: halfW, h: 0.24,
-      fontSize: 7.5, bold: true, color: "64748B", align: "right", valign: "top"
+      x: col2X, y: plcRatioY + 0.58, w: w2, h: 0.26,
+      fontSize: 7.2, bold: true, color: "64748B", align: "center", valign: "top"
+    });
+
+    // Divider 2
+    const div2X = col2X + w2 + gap;
+    slide.addShape("line", {
+      x: div2X, y: plcRatioY + 0.22, w: 0, h: 0.56,
+      line: { color: "E2E8F0", width: 1 }
+    });
+
+    // Kolom 3 (Kanan): Total Remove Jumper
+    const col3X = div2X + gap;
+    const removeVal = totalRemoveJumper !== null && totalRemoveJumper !== undefined ? String(totalRemoveJumper) : "0";
+    slide.addText(removeVal, {
+      x: col3X, y: plcRatioY + 0.18, w: w3, h: 0.40,
+      fontSize: 18, bold: true, color: "0F172A", align: "right", valign: "top"
+    });
+    slide.addText("Total Remove Jumper", {
+      x: col3X, y: plcRatioY + 0.58, w: w3, h: 0.26,
+      fontSize: 7.2, bold: true, color: "64748B", align: "right", valign: "top"
     });
   } else {
     slide.addText(plcMetricResult.reason || "Belum tersedia", {

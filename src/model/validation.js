@@ -63,6 +63,11 @@ function isValidYear(v) {
 }
 
 function isValidWeek(v) {
+  if (typeof v === "string") {
+    const match = v.trim().match(/^W?(\d{1,2})$/i);
+    if (!match) return false;
+    v = parseInt(match[1], 10);
+  }
   return (
     Number.isInteger(v) &&
     v >= APP_CONFIG.weekRange.min &&
@@ -116,6 +121,14 @@ export function validateConfig(config) {
   } else if (!isPositiveInteger(config.totalPlcInScope)) {
     errors.push(
       `Total PLC in Scope harus bilangan bulat positif (diisi: ${config.totalPlcInScope}).`
+    );
+  }
+
+  if (isNullOrUndefined(config.totalRemoveJumper) || config.totalRemoveJumper === "") {
+    errors.push("Total Remove Jumper wajib diisi.");
+  } else if (typeof config.totalRemoveJumper !== "number" || !Number.isInteger(config.totalRemoveJumper) || config.totalRemoveJumper < 0) {
+    errors.push(
+      "Total Remove Jumper harus berupa bilangan bulat non-negatif (>= 0)."
     );
   }
 
@@ -356,7 +369,7 @@ export function validateJumperRecord(record, existingIds = new Set()) {
   }
 
   if (!isNonEmptyString(record.description)) {
-    errors.push(`${ctx}: Description wajib diisi.`);
+    warnings.push(`${ctx}: Description belum diisi.`);
   }
 
   // equipmentTag opsional — tidak divalidasi kontennya

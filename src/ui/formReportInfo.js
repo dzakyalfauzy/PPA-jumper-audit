@@ -110,7 +110,7 @@ function _buildReportInfoHTML() {
         <label class="form-label" for="ri-week">Reporting Week <span class="required">*</span></label>
         <select id="ri-week" class="form-select">
           <option value="">-- Pilih Minggu (W1-W52) --</option>
-          ${Array.from({ length: 52 }, (_, i) => `<option value="${i + 1}">W${i + 1}</option>`).join("")}
+          ${Array.from({ length: 52 }, (_, i) => `<option value="W${i + 1}">W${i + 1}</option>`).join("")}
         </select>
         <div class="field-error" id="err-week"></div>
       </div>
@@ -119,6 +119,12 @@ function _buildReportInfoHTML() {
         <label class="form-label" for="ri-plc-total">Total PLC in Scope <span class="required">*</span></label>
         <input type="number" id="ri-plc-total" class="form-input" min="1" step="1" placeholder="Misal: 69" />
         <div class="field-error" id="err-plc-total"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="ri-total-remove">Total Remove Jumper <span class="required">*</span></label>
+        <input type="number" id="ri-total-remove" class="form-input" min="0" step="1" placeholder="0" />
+        <div class="field-error" id="err-total-remove"></div>
       </div>
     </div>
   `;
@@ -153,12 +159,27 @@ function _buildAreaSummaryHTML() {
 function _bindReportInfoEvents(container) {
   _bindInput(container, "#ri-title",     (v) => updateConfig({ title: v }), "err-title");
   _bindNumberInput(container, "#ri-year", (v) => updateConfig({ reportingYear: v }), "err-year");
-  _bindNumberInput(container, "#ri-week", (v) => updateConfig({ reportingWeek: v }), "err-week");
+  _bindWeekInput(container, "#ri-week",   (v) => updateConfig({ reportingWeek: v }), "err-week");
   _bindNumberInput(container, "#ri-plc-total", (v) => updateConfig({ totalPlcInScope: v }), "err-plc-total");
+  _bindNumberInput(container, "#ri-total-remove", (v) => updateConfig({ totalRemoveJumper: v }), "err-total-remove");
 }
 
 function _bindAreaSummaryEvents(container) {
   // Area Summary kini read-only (dihitung otomatis dari Actual Weekly Chart)
+}
+
+function _bindWeekInput(container, selector, updater, errId) {
+  const el = container.querySelector(selector);
+  if (!el) return;
+  el.addEventListener("change", () => {
+    const raw = el.value.trim();
+    updater(raw === "" ? null : raw);
+    _clearError(container, errId);
+    _onStateChange();
+  });
+  el.addEventListener("blur", () => {
+    _runConfigValidation(container);
+  });
 }
 
 function _bindInput(container, selector, updater, errId) {
@@ -197,10 +218,15 @@ function _bindNumberInput(container, selector, updater, errId) {
 function _populateReportInfo(container) {
   const cfg = getConfig();
 
-  _setVal(container, "#ri-title",     cfg.title);
-  _setVal(container, "#ri-year",      cfg.reportingYear ?? "");
-  _setVal(container, "#ri-week",      cfg.reportingWeek ?? "");
-  _setVal(container, "#ri-plc-total", cfg.totalPlcInScope ?? "");
+  _setVal(container, "#ri-title",        cfg.title);
+  _setVal(container, "#ri-year",         cfg.reportingYear ?? "");
+  _setVal(container, "#ri-week",         cfg.reportingWeek ?? "");
+  _setVal(container, "#ri-plc-total",    cfg.totalPlcInScope ?? "");
+  _setVal(container, "#ri-total-remove", cfg.totalRemoveJumper ?? 0);
+}
+
+export function refreshReportInfoDisplay(container) {
+  _populateReportInfo(container);
 }
 
 export function refreshAreaSummaryDisplay(container) {
@@ -230,11 +256,12 @@ function _runConfigValidation(container) {
 
   // Map error message ke field ID (heuristic match)
   const fieldMap = {
-    "err-title":     "Report Title",
-    "err-plant-area":"Plant Area",
-    "err-year":      "Reporting Year",
-    "err-week":      "Reporting Week",
-    "err-plc-total": "Total PLC",
+    "err-title":        "Report Title",
+    "err-plant-area":   "Plant Area",
+    "err-year":         "Reporting Year",
+    "err-week":         "Reporting Week",
+    "err-plc-total":    "Total PLC",
+    "err-total-remove": "Total Remove Jumper",
   };
 
   // Clear semua dulu
@@ -256,7 +283,22 @@ function _runConfigValidation(container) {
 
 function _setVal(container, selector, value) {
   const el = container.querySelector(selector);
-  if (el) el.value = value ?? "";
+  if (!el) return;
+  if (typeof document !== "undefined" && document.activeElement === el) return;
+  if (selector === "#ri-week" && value !== null && value !== undefined && value !== "") {
+    const str = String(value).trim().toUpperCase();
+    const withW = str.startsWith("W") ? str : `W${str}`;
+    const withoutW = str.replace(/\D/g, "");
+    if (el.options) {
+      for (const opt of el.options) {
+        if (opt.value === withW || opt.value === withoutW || opt.text === withW) {
+          el.value = opt.value;
+          return;
+        }
+      }
+    }
+  }
+  el.value = value ?? "";
 }
 
 function _clearError(container, id) {

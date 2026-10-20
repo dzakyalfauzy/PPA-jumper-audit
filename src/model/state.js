@@ -40,6 +40,7 @@ export function createInitialState() {
       reportingYear:    null,  // Integer tahun valid; null = belum diisi
       reportingWeek:    null,  // Integer minggu valid; null = belum diisi
       totalPlcInScope:  null,  // Integer > 0; null = belum diisi; denominator PLC metric
+      totalRemoveJumper: 0,    // Integer >= 0; default 0; manual input
     },
 
     /**
@@ -283,135 +284,207 @@ export function deleteJumperRecord(jumperId) {
 
 export const WEEK_40_BASELINE = Object.freeze({
   config: {
-    title: "PPA JUMPER AUDIT WEEK-40",
+    title: "PPA JUMPER AUDIT WEEK",
     plantArea: "Process Plant Area",
     reportingYear: 2026,
-    reportingWeek: 40,
-    totalPlcInScope: 69,
+    reportingWeek: "W43",
+    totalPlcInScope: 63,
+    totalRemoveJumper: 0,
   },
   areaSummary: [
-    { areaId: "dryer_cm", jumperCount: 6 },
+    { areaId: "dryer_cm", jumperCount: 3 },
     { areaId: "kiln_cts", jumperCount: 3 },
     { areaId: "furnace", jumperCount: 0 },
     { areaId: "converter", jumperCount: 0 },
   ],
   weeklyChartData: [
     // Dryer-CM
-    { areaId: "dryer_cm", category: "Shortbranches", week: "W38", plan: 2, actual: 2 },
-    { areaId: "dryer_cm", category: "Shortbranches", week: "W39", plan: 2, actual: 2 },
-    { areaId: "dryer_cm", category: "Shortbranches", week: "W40", plan: 2, actual: 2 },
-    { areaId: "dryer_cm", category: "Forces", week: "W38", plan: 2, actual: 2 },
-    { areaId: "dryer_cm", category: "Forces", week: "W39", plan: 2, actual: 2 },
-    { areaId: "dryer_cm", category: "Forces", week: "W40", plan: 2, actual: 2 },
-    { areaId: "dryer_cm", category: "AFI", week: "W38", plan: 0, actual: 0 },
-    { areaId: "dryer_cm", category: "AFI", week: "W39", plan: 0, actual: 0 },
+    { areaId: "dryer_cm", category: "Shortbranches", week: "W40", plan: 5, actual: 5 },
+    { areaId: "dryer_cm", category: "Shortbranches", week: "W41", plan: 5, actual: 5 },
+    { areaId: "dryer_cm", category: "Shortbranches", week: "W42", plan: 2, actual: 2 },
+    { areaId: "dryer_cm", category: "Shortbranches", week: "W43", plan: 2, actual: 2 },
+    { areaId: "dryer_cm", category: "Shortbranches", week: "W44", plan: 2, actual: null },
+    { areaId: "dryer_cm", category: "Forces", week: "W40", plan: 1, actual: 1 },
+    { areaId: "dryer_cm", category: "Forces", week: "W41", plan: 1, actual: 1 },
+    { areaId: "dryer_cm", category: "Forces", week: "W42", plan: 1, actual: 1 },
+    { areaId: "dryer_cm", category: "Forces", week: "W43", plan: 1, actual: 1 },
+    { areaId: "dryer_cm", category: "Forces", week: "W44", plan: 1, actual: null },
     { areaId: "dryer_cm", category: "AFI", week: "W40", plan: 0, actual: 0 },
+    { areaId: "dryer_cm", category: "AFI", week: "W41", plan: 0, actual: 0 },
+    { areaId: "dryer_cm", category: "AFI", week: "W42", plan: 0, actual: 0 },
+    { areaId: "dryer_cm", category: "AFI", week: "W43", plan: 0, actual: 0 },
+    { areaId: "dryer_cm", category: "AFI", week: "W44", plan: 0, actual: null },
 
     // Kiln-CTS
-    { areaId: "kiln_cts", category: "Shortbranches", week: "W38", plan: 0, actual: 0 },
-    { areaId: "kiln_cts", category: "Shortbranches", week: "W39", plan: 0, actual: 0 },
     { areaId: "kiln_cts", category: "Shortbranches", week: "W40", plan: 0, actual: 0 },
-    { areaId: "kiln_cts", category: "Forces", week: "W38", plan: 0, actual: 0 },
-    { areaId: "kiln_cts", category: "Forces", week: "W39", plan: 0, actual: 0 },
+    { areaId: "kiln_cts", category: "Shortbranches", week: "W41", plan: 0, actual: 0 },
+    { areaId: "kiln_cts", category: "Shortbranches", week: "W42", plan: 0, actual: 0 },
+    { areaId: "kiln_cts", category: "Shortbranches", week: "W43", plan: 0, actual: 0 },
+    { areaId: "kiln_cts", category: "Shortbranches", week: "W44", plan: 0, actual: null },
     { areaId: "kiln_cts", category: "Forces", week: "W40", plan: 0, actual: 0 },
-    { areaId: "kiln_cts", category: "AFI", week: "W38", plan: 3, actual: 3 },
-    { areaId: "kiln_cts", category: "AFI", week: "W39", plan: 3, actual: 3 },
+    { areaId: "kiln_cts", category: "Forces", week: "W41", plan: 0, actual: 0 },
+    { areaId: "kiln_cts", category: "Forces", week: "W42", plan: 0, actual: 0 },
+    { areaId: "kiln_cts", category: "Forces", week: "W43", plan: 0, actual: 0 },
+    { areaId: "kiln_cts", category: "Forces", week: "W44", plan: 0, actual: null },
     { areaId: "kiln_cts", category: "AFI", week: "W40", plan: 3, actual: 3 },
+    { areaId: "kiln_cts", category: "AFI", week: "W41", plan: 3, actual: 3 },
+    { areaId: "kiln_cts", category: "AFI", week: "W42", plan: 3, actual: 3 },
+    { areaId: "kiln_cts", category: "AFI", week: "W43", plan: 3, actual: 3 },
+    { areaId: "kiln_cts", category: "AFI", week: "W44", plan: 3, actual: null },
 
     // Furnace
-    { areaId: "furnace", category: "Shortbranches", week: "W38", plan: 0, actual: 0 },
-    { areaId: "furnace", category: "Shortbranches", week: "W39", plan: 0, actual: 0 },
     { areaId: "furnace", category: "Shortbranches", week: "W40", plan: 0, actual: 0 },
-    { areaId: "furnace", category: "Forces", week: "W38", plan: 0, actual: 0 },
-    { areaId: "furnace", category: "Forces", week: "W39", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Shortbranches", week: "W41", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Shortbranches", week: "W42", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Shortbranches", week: "W43", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Shortbranches", week: "W44", plan: 0, actual: null },
     { areaId: "furnace", category: "Forces", week: "W40", plan: 0, actual: 0 },
-    { areaId: "furnace", category: "AFI", week: "W38", plan: 0, actual: 0 },
-    { areaId: "furnace", category: "AFI", week: "W39", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Forces", week: "W41", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Forces", week: "W42", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Forces", week: "W43", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "Forces", week: "W44", plan: 0, actual: null },
     { areaId: "furnace", category: "AFI", week: "W40", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "AFI", week: "W41", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "AFI", week: "W42", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "AFI", week: "W43", plan: 0, actual: 0 },
+    { areaId: "furnace", category: "AFI", week: "W44", plan: 0, actual: null },
 
     // Converter
-    { areaId: "converter", category: "Shortbranches", week: "W38", plan: 0, actual: 0 },
-    { areaId: "converter", category: "Shortbranches", week: "W39", plan: 0, actual: 0 },
     { areaId: "converter", category: "Shortbranches", week: "W40", plan: 0, actual: 0 },
-    { areaId: "converter", category: "Forces", week: "W38", plan: 0, actual: 0 },
-    { areaId: "converter", category: "Forces", week: "W39", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Shortbranches", week: "W41", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Shortbranches", week: "W42", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Shortbranches", week: "W43", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Shortbranches", week: "W44", plan: 0, actual: null },
     { areaId: "converter", category: "Forces", week: "W40", plan: 0, actual: 0 },
-    { areaId: "converter", category: "AFI", week: "W38", plan: 0, actual: 0 },
-    { areaId: "converter", category: "AFI", week: "W39", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Forces", week: "W41", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Forces", week: "W42", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Forces", week: "W43", plan: 0, actual: 0 },
+    { areaId: "converter", category: "Forces", week: "W44", plan: 0, actual: null },
     { areaId: "converter", category: "AFI", week: "W40", plan: 0, actual: 0 },
+    { areaId: "converter", category: "AFI", week: "W41", plan: 0, actual: 0 },
+    { areaId: "converter", category: "AFI", week: "W42", plan: 0, actual: 0 },
+    { areaId: "converter", category: "AFI", week: "W43", plan: 0, actual: 0 },
+    { areaId: "converter", category: "AFI", week: "W44", plan: 0, actual: null },
   ],
   jumperRegister: [
     {
       jumperId: "001",
-      plc: "D3C",
-      areaId: "dryer_cm",
-      category: "Shortbranches",
-      description: "Shortbranches installed on PLC D3C, FSL (Flow Switch Low) Feed conv. Dryer 3",
+      plc: "K2",
+      areaId: "kiln_cts",
+      category: "AFI",
+      description: null,
       equipmentTag: null,
-      installedDate: "2026-03-07",
-      dueDate: "2026-10-31",
-      authorizationType: AUTH_TYPE.AUTHORIZED,
+      installedDate: "2025-01-31",
+      dueDate: null,
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
     },
     {
       jumperId: "002",
-      plc: "D3C",
-      areaId: "dryer_cm",
-      category: "Shortbranches",
-      description: "Shortbranches installed on PLC D3C MainFlame On Interlock to TR ESP",
+      plc: "K2",
+      areaId: "kiln_cts",
+      category: "AFI",
+      description: null,
       equipmentTag: null,
-      installedDate: "2026-04-18",
-      dueDate: "2026-11-15",
-      authorizationType: AUTH_TYPE.AUTHORIZED,
+      installedDate: "2025-01-31",
+      dueDate: null,
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
     },
     {
       jumperId: "003",
-      plc: "CMS1",
-      areaId: "dryer_cm",
-      category: "Forces",
-      description: "Forces installed on PLC CMS1 Level HiHi Switch Surge Bin - Digital_Alarms",
+      plc: "K2",
+      areaId: "kiln_cts",
+      category: "AFI",
+      description: null,
       equipmentTag: null,
-      installedDate: "2026-07-04",
-      dueDate: "2026-12-31",
-      authorizationType: AUTH_TYPE.AUTHORIZED,
+      installedDate: "2025-01-31",
+      dueDate: null,
+      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
     },
     {
       jumperId: "004",
-      plc: "K2",
-      areaId: "kiln_cts",
-      category: "AFI",
-      description: "Conveying Blower opr ready E4AM01 on PLC K2",
+      plc: "D3C",
+      areaId: "dryer_cm",
+      category: "Shortbranches",
+      description: null,
       equipmentTag: null,
-      installedDate: "2026-09-27",
-      dueDate: null,
-      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
+      installedDate: "2026-03-06",
+      dueDate: "2026-12-18",
+      authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
       jumperId: "005",
-      plc: "K2",
-      areaId: "kiln_cts",
-      category: "AFI",
-      description: "Conveying Blower opr ready H21M03 on PLC K2",
+      plc: "D3C",
+      areaId: "dryer_cm",
+      category: "Shortbranches",
+      description: null,
       equipmentTag: null,
-      installedDate: "2026-09-27",
-      dueDate: null,
-      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
+      installedDate: "2026-04-17",
+      dueDate: "2026-04-30",
+      authorizationType: AUTH_TYPE.AUTHORIZED,
     },
     {
       jumperId: "006",
-      plc: "K2",
-      areaId: "kiln_cts",
-      category: "AFI",
-      description: "Conveying Blower opr ready H21M04 on PLC K2",
+      plc: "CMS1",
+      areaId: "dryer_cm",
+      category: "Forces",
+      description: null,
       equipmentTag: null,
-      installedDate: "2026-09-27",
-      dueDate: null,
-      authorizationType: AUTH_TYPE.NON_AUTHORIZED,
+      installedDate: "2026-06-29",
+      dueDate: "2026-07-03",
+      authorizationType: AUTH_TYPE.AUTHORIZED,
     },
   ],
 });
 
 export const STORAGE_KEY_V2_1 = "ppa_jumper_audit_state_v2_1";
 export const STORAGE_KEY_V2   = "ppa_jumper_audit_state_v2";
+
+/**
+ * Mendeteksi apakah state yang dimuat dari localStorage merupakan baseline lama yang usang
+ * (misal dataset W40 dengan 36 weekly data, 11 jumper, title 'PPA JUMPER AUDIT WEEK-40',
+ * reportingWeek W40/40, atau total PLC 69).
+ * Dataset usang ini TIDAK boleh menimpa baseline referensi v1.1.4+.
+ *
+ * @param {object} parsed
+ * @param {boolean} isFromLegacyKey
+ * @returns {boolean}
+ */
+export function isObsoleteLegacyDataset(parsed, isFromLegacyKey = false) {
+  if (!parsed || typeof parsed !== "object") return false;
+
+  const cfg = parsed.config || {};
+  const isOldTitle = cfg.title === "PPA JUMPER AUDIT WEEK-40";
+  const isOldScope = cfg.totalPlcInScope === 69;
+  const isOldWeek = cfg.reportingWeek === 40 || cfg.reportingWeek === "W40" || cfg.reportingWeek === "40";
+
+  // Memiliki minggu W38 atau W39 (hanya ada pada dataset 36 baris lama)
+  const hasOldWeeks =
+    Array.isArray(parsed.weeklyChartData) &&
+    parsed.weeklyChartData.some((r) => r && (r.week === "W38" || r.week === "W39"));
+
+  // 36 data baris mingguan dengan konfigurasi baseline lama
+  const isOld36WeeklyData =
+    Array.isArray(parsed.weeklyChartData) &&
+    parsed.weeklyChartData.length === 36 &&
+    (isOldWeek || isOldScope || isOldTitle || hasOldWeeks);
+
+  // 11 jumper records dengan konfigurasi baseline lama
+  const isOld11JumperData =
+    Array.isArray(parsed.jumperRegister) &&
+    parsed.jumperRegister.length === 11 &&
+    (isOldScope || isOldWeek || isOldTitle);
+
+  if (isOldTitle || hasOldWeeks || isOld36WeeklyData || isOld11JumperData) {
+    return true;
+  }
+
+  // Jika dibaca dari legacy key (STORAGE_KEY_V2) dan merupakan 36 baris data lama
+  if (isFromLegacyKey && Array.isArray(parsed.weeklyChartData) && parsed.weeklyChartData.length === 36) {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Migrasi sempit untuk record baseline lama yang kehilangan Due Date.
@@ -498,6 +571,29 @@ export function loadPersistedState() {
       return false;
     }
 
+    // 0. Deteksi dataset baseline lama/usang (36 baris weekly, 11 jumper, title PPA JUMPER AUDIT WEEK-40, dll)
+    // Cegah silent regression ke dataset usang; pulihkan baseline referensi target v1.1.4+.
+    if (isObsoleteLegacyDataset(parsed, isFromLegacyKey)) {
+      const userTotalRemove =
+        parsed.config &&
+        typeof parsed.config.totalRemoveJumper === "number" &&
+        Number.isInteger(parsed.config.totalRemoveJumper) &&
+        parsed.config.totalRemoveJumper >= 0
+          ? parsed.config.totalRemoveJumper
+          : WEEK_40_BASELINE.config.totalRemoveJumper;
+
+      _state = JSON.parse(JSON.stringify(WEEK_40_BASELINE));
+      _state.config.totalRemoveJumper = userTotalRemove;
+      syncAreaSummaryFromWeeklyChart();
+      savePersistedState();
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem(STORAGE_KEY_V2);
+        }
+      } catch (_) {}
+      return true;
+    }
+
     // 1. Deteksi schema lama: field authorizationStatus/mocStatus atau ID bukan 3 digit
     const isLegacy = parsed.jumperRegister.some(
       (r) =>
@@ -514,10 +610,13 @@ export function loadPersistedState() {
       parsed.jumperRegister = migrateJumperRecords(parsed.jumperRegister);
     }
 
-    // 2. Migrasi config: hapus weekLabels dan identificationYearFilter jika ada
+    // 2. Migrasi config: hapus weekLabels dan identificationYearFilter jika ada, default totalRemoveJumper jika belum ada
     if (parsed.config) {
       delete parsed.config.weekLabels;
       delete parsed.config.identificationYearFilter;
+      if (parsed.config.totalRemoveJumper === undefined || parsed.config.totalRemoveJumper === null) {
+        parsed.config.totalRemoveJumper = 0;
+      }
     }
 
     parsed.jumperRegister = _ensureAuthorizationType(parsed.jumperRegister);
@@ -551,6 +650,11 @@ export function resetToBaseline() {
   _state = JSON.parse(JSON.stringify(WEEK_40_BASELINE));
   syncAreaSummaryFromWeeklyChart();
   savePersistedState();
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.removeItem(STORAGE_KEY_V2);
+    }
+  } catch (_) {}
 }
 
 export function resetState() {

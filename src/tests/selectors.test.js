@@ -204,28 +204,29 @@ describe("plcsWithoutActiveJumpers — PLC tanpa jumper aktif (metric terbalik)"
 });
 
 // ---------------------------------------------------------------------------
-// TEST: jumperCountPerPlc — hanya jumper aktif (BR-07)
+// TEST: jumperCountPerPlc — semua record valid (BR-07 revisi v1.1.3)
 // ---------------------------------------------------------------------------
 
-describe("jumperCountPerPlc — agregasi per PLC × kategori (jumper aktif)", () => {
+describe("jumperCountPerPlc — agregasi per PLC × kategori (semua record)", () => {
 
   test("register kosong mengembalikan array kosong", () => {
-    expect(jumperCountPerPlc([], TODAY)).toHaveLength(0);
+    expect(jumperCountPerPlc([])).toHaveLength(0);
   });
 
-  test("record expired tetap dihitung sebagai aktif sesuai aturan", () => {
+  test("record expired dan active keduanya dihitung", () => {
     const active  = makeRecord({ jumperId: "001", plc: "PLC-A", category: CATEGORIES.AFI, dueDate: "2026-12-31" });
     const expired = makeRecord({ jumperId: "002", plc: "PLC-A", category: CATEGORIES.AFI, dueDate: "2020-01-01" });
-    const result = jumperCountPerPlc([active, expired], TODAY);
+    const result = jumperCountPerPlc([active, expired]);
     expect(result).toHaveLength(1);
     expect(result[0].byCategory[CATEGORIES.AFI]).toBe(2);
     expect(result[0].total).toBe(2);
   });
 
-  test("record tanpa Due Date dikecualikan", () => {
+  test("record tanpa Due Date tetap dihitung (v1.1.3)", () => {
     const noDate = makeRecord({ jumperId: "001", plc: "PLC-A", dueDate: null });
-    const result = jumperCountPerPlc([noDate], TODAY);
-    expect(result).toHaveLength(0);
+    const result = jumperCountPerPlc([noDate]);
+    expect(result).toHaveLength(1);
+    expect(result[0].byCategory[CATEGORIES.AFI]).toBe(1);
   });
 
   test("satu PLC dengan beberapa kategori — hitungan per kategori benar", () => {
@@ -234,7 +235,7 @@ describe("jumperCountPerPlc — agregasi per PLC × kategori (jumper aktif)", ()
       makeRecord({ jumperId: "002", plc: "PLC-A", category: CATEGORIES.FORCES }),
       makeRecord({ jumperId: "003", plc: "PLC-A", category: CATEGORIES.SHORTBRANCHES }),
     ];
-    const result = jumperCountPerPlc(records, TODAY);
+    const result = jumperCountPerPlc(records);
     expect(result).toHaveLength(1);
     expect(result[0].plc).toBe("PLC-A");
     expect(result[0].byCategory[CATEGORIES.AFI]).toBe(1);
@@ -245,7 +246,7 @@ describe("jumperCountPerPlc — agregasi per PLC × kategori (jumper aktif)", ()
 
   test("kategori yang tidak memiliki data mengembalikan 0", () => {
     const records = [makeRecord({ plc: "PLC-A", category: CATEGORIES.AFI })];
-    const result = jumperCountPerPlc(records, TODAY);
+    const result = jumperCountPerPlc(records);
     expect(result[0].byCategory[CATEGORIES.FORCES]).toBe(0);
     expect(result[0].byCategory[CATEGORIES.SHORTBRANCHES]).toBe(0);
   });
@@ -255,7 +256,7 @@ describe("jumperCountPerPlc — agregasi per PLC × kategori (jumper aktif)", ()
       makeRecord({ jumperId: "001", plc: "PLC-Z", category: CATEGORIES.AFI }),
       makeRecord({ jumperId: "002", plc: "PLC-A", category: CATEGORIES.AFI }),
     ];
-    const result = jumperCountPerPlc(records, TODAY);
+    const result = jumperCountPerPlc(records);
     expect(result).toHaveLength(2);
     expect(result[0].plc).toBe("PLC-A");
     expect(result[1].plc).toBe("PLC-Z");
@@ -266,14 +267,14 @@ describe("jumperCountPerPlc — agregasi per PLC × kategori (jumper aktif)", ()
       makeRecord({ jumperId: "001", plc: "PLC-A", category: CATEGORIES.AFI }),
       makeRecord({ jumperId: "002", plc: "PLC-A", category: CATEGORIES.AFI }),
     ];
-    const result = jumperCountPerPlc(records, TODAY);
+    const result = jumperCountPerPlc(records);
     expect(result[0].byCategory[CATEGORIES.AFI]).toBe(2);
     expect(result[0].total).toBe(2);
   });
 
   test("fungsi tidak mengubah array sumber", () => {
     const register = [makeRecord()];
-    jumperCountPerPlc(register, TODAY);
+    jumperCountPerPlc(register);
     expect(register).toHaveLength(1);
     expect(register[0].jumperId).toBe("001");
   });
@@ -616,23 +617,24 @@ describe("Phase 5.4 — calculateAreaSummariesFromWeeklyChart & Week-40 Baseline
     expect(reg.every((r) => typeof r.installedDate === "string")).toBe(true);
     expect(reg.every((r) => "dueDate" in r)).toBe(true);
 
-    // Authorized records memiliki dueDate valid, Non-Authorized opsional (null)
+    // Authorized records (004-006) memiliki dueDate valid, Non-Authorized (001-003) opsional (null)
     const authRecords = reg.filter((r) => r.authorizationType === AUTH_TYPE.AUTHORIZED);
+    expect(authRecords).toHaveLength(3);
     expect(authRecords.every((r) => typeof r.dueDate === "string")).toBe(true);
 
-    // Record tanpa dueDate: 0 PLC dengan jumper aktif → 69/69 tanpa jumper aktif (100%)
+    // Record tanpa dueDate: 0 PLC dengan jumper aktif → 63/63 tanpa jumper aktif (100%)
     const nullDueDateReg = reg.map((r) => ({ ...r, dueDate: null }));
     const plcMetric = plcsWithoutActiveJumpers(nullDueDateReg, WEEK_40_BASELINE.config.totalPlcInScope, TODAY);
     expect(plcMetric.ok).toBe(true);
     expect(plcMetric.plcsWithActive).toBe(0);
-    expect(plcMetric.plcsWithoutActive).toBe(69);
+    expect(plcMetric.plcsWithoutActive).toBe(63);
     expect(plcMetric.percentage).toBeCloseTo(100);
 
-    // Baseline asli dengan jumper aktif terhitung
+    // Baseline asli dengan jumper aktif terhitung (D3C + CMS1 = 2 PLCs)
     const actualMetric = plcsWithoutActiveJumpers(reg, WEEK_40_BASELINE.config.totalPlcInScope, TODAY);
     expect(actualMetric.plcsWithActive).toBe(2);
-    expect(actualMetric.plcsWithoutActive).toBe(67);
-    expect(actualMetric.percentage).toBeCloseTo((67 / 69) * 100);
+    expect(actualMetric.plcsWithoutActive).toBe(61);
+    expect(actualMetric.percentage).toBeCloseTo((61 / 63) * 100);
   });
 });
 
