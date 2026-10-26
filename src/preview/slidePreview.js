@@ -328,15 +328,23 @@ function _buildJumperWithoutMocAuthorizedList(nonAuthorizedJumpers, maxRows) {
   }
   return `
     <div class="slide-remaining-list">
-      ${items.map((r, i) => `
+      ${items.map((r) => {
+        const id = _esc(r.jumperId || "—");
+        const plc = _esc(r.plc || "—");
+        const cat = _esc(r.category || "—");
+        const desc = r.description ? _esc(r.description) : "";
+        const descHtml = desc
+          ? `<span class="slide-remaining-item__sep">-</span><span class="slide-remaining-item__desc">${desc}</span>`
+          : "";
+        return `
         <div class="slide-remaining-item">
-          <span class="slide-remaining-item__no">${i + 1}.</span>
-          <span class="slide-remaining-item__id">${_esc(r.jumperId)}</span>
-          <span class="slide-remaining-item__plc">${_esc(r.plc)}</span>
-          <span class="slide-remaining-item__area">${_esc(AREA_LABELS[r.areaId] || r.areaId || "")}</span>
-          <span class="slide-remaining-item__cat">${_esc(r.category || "")}</span>
+          <span class="slide-remaining-item__id">${id},</span>
+          <span class="slide-remaining-item__plc">PLC ${plc},</span>
+          <span class="slide-remaining-item__cat">${cat}</span>
+          ${descHtml}
         </div>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
   `;
 }

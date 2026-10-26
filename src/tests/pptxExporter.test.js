@@ -71,8 +71,8 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
     // Verifikasi 12 combo charts + 1 PLC bar chart = 13 charts native
     expect(slide.charts).toHaveLength(13);
 
-    // Verifikasi tabel native editable (Jumper Update Table dan Remaining List)
-    expect(slide.tables).toHaveLength(2);
+    // Verifikasi tabel native editable (Total Jumper With MOC/Authorized Jumper)
+    expect(slide.tables).toHaveLength(1);
 
     // Verifikasi writeFile atau write terpanggil
     expect(mockPptxInstance.slides).toHaveLength(1);
@@ -283,16 +283,14 @@ describe("PHASE 6.2 — PowerPoint Export & Layout Redesign (pptxExporter.js)", 
     expect(authDataIds).toEqual(["001", "002"]);
     expect(authDataIds).not.toContain("003");
 
-    // 2. Non-Authorized table (right column, headers: No, ID, PLC, Area, Category)
-    const nonAuthTable = slide.tables.find(
-      (tb) => tb.rows[0] && tb.rows[0][0] && tb.rows[0][0].text === "No" && tb.rows[0][1].text === "ID"
-    );
-    expect(nonAuthTable).toBeDefined();
+    // 2. Non-Authorized list (right column text list: ID, PLC, Category - Description)
+    const nonAuthTextItem = slide.texts.find((t) => Array.isArray(t.txt) && t.txt.some((run) => run.text === "003"));
+    expect(nonAuthTextItem).toBeDefined();
 
-    const nonAuthDataIds = nonAuthTable.rows.slice(1).map((r) => r[1].text);
-    expect(nonAuthDataIds).toEqual(["003"]);
-    expect(nonAuthDataIds).not.toContain("001");
-    expect(nonAuthDataIds).not.toContain("002");
+    const nonAuthCombinedText = nonAuthTextItem.txt.map((run) => run.text).join("");
+    expect(nonAuthCombinedText).toContain("003, PLC K1, AFI - Test jumper 3");
+    expect(nonAuthCombinedText).not.toContain("001");
+    expect(nonAuthCombinedText).not.toContain("002");
 
     // 3. Right column title includes exact count badge (1)
     const nonAuthTitle = slide.texts.find((t) => String(t.txt).startsWith("Jumper Without MOC/Authorized Jumper"));

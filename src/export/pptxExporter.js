@@ -441,36 +441,46 @@ function _buildRightColumn(slide, pptx, plcMetricResult, jumperPerPlc, nonAuthor
     fontSize: 10, bold: true, color: "1E3A8A"
   });
 
-  const remHeaders = [
-    { text: "No", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
-    { text: "ID", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
-    { text: "PLC", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
-    { text: "Area", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
-    { text: "Category", options: { bold: true, fill: "F1F5F9", color: "1E293B", fontSize: 7.5 } },
-  ];
-
   const nonAuthItems = (nonAuthorizedJumpers || []).slice(0, 8);
-  const remData = nonAuthItems.length > 0
-    ? nonAuthItems.map((r, i) => [
-        { text: String(i + 1), options: { fontSize: 7 } },
-        { text: r.jumperId || "—", options: { fontSize: 7, bold: true } },
-        { text: r.plc || "—", options: { fontSize: 7 } },
-        { text: AREA_LABELS[r.areaId] || r.areaId || "—", options: { fontSize: 7 } },
-        { text: r.category || "—", options: { fontSize: 7 } },
-      ])
-    : [[
-        { text: "Tidak ada record Non-Authorized", options: { fontSize: 7, colspan: 5, color: "64748B" } }
-      ]];
+  if (nonAuthItems.length > 0) {
+    const textRuns = [];
+    nonAuthItems.forEach((r, idx) => {
+      const id = r.jumperId || "—";
+      const plc = r.plc || "—";
+      const cat = r.category || "—";
+      const desc = r.description ? ` - ${r.description}` : "";
+      const isFirst = idx === 0;
 
-  const remRows = [remHeaders, ...remData];
+      textRuns.push({
+        text: id,
+        options: { bold: true, color: "0F172A", fontSize: 7.5, breakLine: !isFirst }
+      });
+      textRuns.push({
+        text: `, PLC ${plc}, ${cat}${desc}`,
+        options: { bold: false, color: "334155", fontSize: 7.5 }
+      });
+    });
 
-  slide.addTable(remRows, {
-    x: colX + 0.08, y: remListY + 0.26, w: colW - 0.16, h: remListH - 0.32,
-    colW: [0.30, 0.65, 0.72, 1.08, 1.08],
-    border: { color: "E2E8F0", pt: 0.5 },
-    fill: "FFFFFF",
-    autoPage: false
-  });
+    slide.addText(textRuns, {
+      x: colX + 0.12,
+      y: remListY + 0.28,
+      w: colW - 0.24,
+      h: remListH - 0.36,
+      align: "left",
+      valign: "top",
+      lineSpacingMultiple: 1.2
+    });
+  } else {
+    slide.addText("Tidak ada record Non-Authorized", {
+      x: colX + 0.12,
+      y: remListY + 0.35,
+      w: colW - 0.24,
+      h: 0.3,
+      fontSize: 7.5,
+      color: "64748B",
+      italic: true
+    });
+  }
 
   // 2. PLCs With Active Jumper / Total PLCs Card
   const plcRatioY = 3.28;

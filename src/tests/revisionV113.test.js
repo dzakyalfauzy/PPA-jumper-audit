@@ -162,41 +162,46 @@ describe("v1.1.3 — Revision 1: Obsolete annotations removed", () => {
 // 2. NON-AUTHORIZED LIST COLUMNS
 // ===========================================================================
 
-describe("v1.1.3 — Revision 2: Non-Authorized list has exactly ID, PLC, Area, Category", () => {
+describe("Revision: Non-Authorized list formatted as \"ID\", PLC \"PLC\", \"Category\" - Description", () => {
   const records = [
     makeRecord({ jumperId: "010", plc: "D3C", areaId: AREA_IDS.DRYER_CM, category: CATEGORIES.FORCES,
-                  authorizationType: AUTH_TYPE.NON_AUTHORIZED, description: "Should not appear", dueDate: null }),
+                  authorizationType: AUTH_TYPE.NON_AUTHORIZED, description: "Should appear in list", dueDate: null }),
     makeRecord({ jumperId: "011", plc: "K2", areaId: AREA_IDS.KILN_CTS, category: CATEGORIES.AFI,
-                  authorizationType: AUTH_TYPE.NON_AUTHORIZED, description: "Also hidden", dueDate: null }),
+                  authorizationType: AUTH_TYPE.NON_AUTHORIZED, description: "Also in list", dueDate: null }),
     makeRecord({ jumperId: "012", plc: "CMS1", areaId: AREA_IDS.DRYER_CM, category: CATEGORIES.SHORTBRANCHES,
                   authorizationType: AUTH_TYPE.AUTHORIZED, description: "Auth record", dueDate: "2026-12-31" }),
   ];
   const state = makeBaseState(records);
 
-  test("2a. HTML Non-Authorized list contains Area and Category fields", () => {
+  test("2a. HTML Non-Authorized list formats items as: \"ID\", PLC \"PLC\", \"Category\" - Description", () => {
     const html = renderHtml(state);
     const panelMatch = html.match(/<div class="slide-remaining-panel">([\s\S]*?)<div class="slide-plc-section">/);
     expect(panelMatch).not.toBeNull();
     const panelHtml = panelMatch[1];
-    expect(panelHtml).toContain(AREA_LABELS[AREA_IDS.DRYER_CM]);
-    expect(panelHtml).toContain(AREA_LABELS[AREA_IDS.KILN_CTS]);
+    expect(panelHtml).toContain("010,");
+    expect(panelHtml).toContain("PLC D3C,");
     expect(panelHtml).toContain(CATEGORIES.FORCES);
+    expect(panelHtml).toContain("Should appear in list");
+    expect(panelHtml).toContain("011,");
+    expect(panelHtml).toContain("PLC K2,");
     expect(panelHtml).toContain(CATEGORIES.AFI);
+    expect(panelHtml).toContain("Also in list");
   });
 
-  test("2b. HTML Non-Authorized list does NOT contain description text", () => {
+  test("2b. HTML Non-Authorized list does NOT contain row numbers or Area", () => {
     const html = renderHtml(state);
     const panelMatch = html.match(/<div class="slide-remaining-panel">([\s\S]*?)<div class="slide-plc-section">/);
     const panelHtml = panelMatch[1];
-    expect(panelHtml).not.toContain("Should not appear");
-    expect(panelHtml).not.toContain("Also hidden");
-    expect(panelHtml).not.toContain("slide-remaining-item__desc");
+    expect(panelHtml).not.toContain("slide-remaining-item__no");
+    expect(panelHtml).not.toContain("slide-remaining-item__area");
   });
 
-  test("2c. HTML Non-Authorized list has Area and Category span classes", () => {
+  test("2c. HTML Non-Authorized list has ID, PLC, Category, and Description span classes", () => {
     const html = renderHtml(state);
-    expect(html).toContain("slide-remaining-item__area");
+    expect(html).toContain("slide-remaining-item__id");
+    expect(html).toContain("slide-remaining-item__plc");
     expect(html).toContain("slide-remaining-item__cat");
+    expect(html).toContain("slide-remaining-item__desc");
   });
 
   test("2d. Section title and count badge preserved", () => {
@@ -205,30 +210,28 @@ describe("v1.1.3 — Revision 2: Non-Authorized list has exactly ID, PLC, Area, 
     expect(html).toContain('<span class="slide-count-badge">2</span>');
   });
 
-  test("2e. PPTX Non-Authorized table has columns: No, ID, PLC, Area, Category", async () => {
+  test("2e. PPTX Non-Authorized list rendered as text runs matching preview format", async () => {
     const { MockPptxGen, mockPptxInstance } = makeMockPptx();
     await exportToPowerPoint(state, MockPptxGen);
     const slide = mockPptxInstance.slides[0];
-    const nonAuthTable = slide.tables.find(
-      (tb) => tb.rows[0] && tb.rows[0][0] && tb.rows[0][0].text === "No" && tb.rows[0][1].text === "ID"
-    );
-    expect(nonAuthTable).toBeDefined();
-    const headers = nonAuthTable.rows[0].map((c) => c.text);
-    expect(headers).toEqual(["No", "ID", "PLC", "Area", "Category"]);
-    expect(headers).not.toContain("Description");
+    const nonAuthTextItem = slide.texts.find((t) => Array.isArray(t.txt) && t.txt.some((run) => run.text === "010"));
+    expect(nonAuthTextItem).toBeDefined();
+    const combinedText = nonAuthTextItem.txt.map((run) => run.text).join("");
+    expect(combinedText).toContain("010, PLC D3C, Forces - Should appear in list");
+    expect(combinedText).toContain("011, PLC K2, AFI - Also in list");
+    expect(combinedText).not.toContain("012");
   });
 
-  test("2f. PPTX Non-Authorized data rows show Area and Category values", async () => {
+  test("2f. PPTX Non-Authorized text runs do not have row numbers or Area labels", async () => {
     const { MockPptxGen, mockPptxInstance } = makeMockPptx();
     await exportToPowerPoint(state, MockPptxGen);
     const slide = mockPptxInstance.slides[0];
-    const nonAuthTable = slide.tables.find(
-      (tb) => tb.rows[0] && tb.rows[0][0] && tb.rows[0][0].text === "No" && tb.rows[0][1].text === "ID"
-    );
-    const dataRow = nonAuthTable.rows[1];
-    expect(dataRow[1].text).toBe("010");
-    expect(dataRow[3].text).toBe(AREA_LABELS[AREA_IDS.DRYER_CM]);
-    expect(dataRow[4].text).toBe(CATEGORIES.FORCES);
+    const nonAuthTextItem = slide.texts.find((t) => Array.isArray(t.txt) && t.txt.some((run) => run.text === "010"));
+    const combinedText = nonAuthTextItem.txt.map((run) => run.text).join("");
+    expect(combinedText).not.toContain("1.");
+    expect(combinedText).not.toContain("2.");
+    expect(combinedText).not.toContain(AREA_LABELS[AREA_IDS.DRYER_CM]);
+    expect(combinedText).not.toContain(AREA_LABELS[AREA_IDS.KILN_CTS]);
   });
 });
 

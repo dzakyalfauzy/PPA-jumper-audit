@@ -763,10 +763,14 @@ body {
   padding: 2px 0;
   border-bottom: 1px solid #eef2f8;
   align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .slide-remaining-item__no    { color: var(--color-text-muted); flex-shrink: 0; min-width: 14px; }
 .slide-remaining-item__id    { font-weight: 600; flex-shrink: 0; }
 .slide-remaining-item__plc   { color: var(--color-primary-lt); flex-shrink: 0; }
+.slide-remaining-item__cat   { color: var(--color-text); flex-shrink: 0; font-weight: 500; }
+.slide-remaining-item__sep   { color: var(--color-text-muted); flex-shrink: 0; }
 .slide-remaining-item__desc  { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slide-remaining-criteria    { font-size: 0.68em; color: var(--color-text-muted); margin-top: 2px; }
 
